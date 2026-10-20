@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a feature, mission, district or lesson
+labels: ["kind/feature", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve, and for whom?
+      description: Think about a beginner who is afraid of code. How does this help them?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Game / world, Curriculum / lessons, Local lab, Backend services, UI / design, Packaging, Docs, Other]
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

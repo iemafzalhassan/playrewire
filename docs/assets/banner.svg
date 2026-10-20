@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-label="Rewire: from zero to engineer, one day at a time">
+  <defs>
+    <filter id="wobble"><feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="7"/><feDisplacementMap in="SourceGraphic" scale="3"/></filter>
+    <pattern id="paper" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#f6f0e4"/><circle cx="1" cy="1" r=".6" fill="#e8dfcd"/></pattern>
+  </defs>
+  <rect width="1200" height="320" fill="url(#paper)"/>
+  <g filter="url(#wobble)" fill="none" stroke="#2a2620" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <!-- skyline -->
+    <path d="M700 250 V170 H740 V130 H780 V250 M800 250 V150 H850 V250 M870 250 V110 H900 V90 H930 V250 M950 250 V160 H1010 V250 M1030 250 V135 H1070 V250 M1090 250 V180 H1140 V250"/>
+    <path d="M680 250 H1160"/>
+    <!-- wire -->
+    <path d="M60 268 C260 230,420 300,620 262 S960 240,1160 270" stroke="#e2572b" stroke-width="4"/>
+  </g>
+  <g fill="#e2572b"><rect x="750" y="150" width="10" height="10"/><rect x="880" y="120" width="10" height="10"/><rect x="1040" y="150" width="10" height="10"/></g>
+  <text x="60" y="160" font-family="'Caveat','Patrick Hand','Comic Sans MS',cursive" font-size="120" fill="#2a2620">Rewire</text>
+  <text x="64" y="210" font-family="'Caveat','Patrick Hand','Comic Sans MS',cursive" font-size="38" fill="#2a2620">from zero to engineer, one day at a time</text>
+</svg>

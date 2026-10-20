@@ -1,0 +1,24 @@
+# Brainstorming companion artifacts
+.superpowers/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Rust
+/target/
+**/target/
+
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Node / web
+node_modules/
+dist/
+.env
+.env.*
