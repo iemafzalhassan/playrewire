@@ -1,31 +1,30 @@
 # Governance
 
-PlayRewire is an open-source project with an open, merit-based governance model.
+PlayRewire is an independent open-source project with a **sole owner**. It is not part of any foundation.
 
-## Roles
+## Owner
 
-| Role | Who | Can |
-|---|---|---|
-| **Contributor** | Anyone who opens an issue, pull request, discussion or review | Propose changes |
-| **Reviewer** | Contributors with sustained, quality contributions to an area | Review and approve pull requests in that area |
-| **Maintainer** | Listed in [MAINTAINERS.md](MAINTAINERS.md) | Merge pull requests, triage, cut releases, set the roadmap |
+**Afzal Hassan ([@iemafzalhassan](https://github.com/iemafzalhassan))** owns the project and has final say on:
 
-### Becoming a reviewer or maintainer
-Nominations are made by an existing maintainer in a public issue. A nominee becomes a reviewer or maintainer with approval from a majority of current maintainers and no unresolved objection within 7 days.
+- product direction, curriculum and roadmap
+- architecture and major technical decisions
+- releases, the hosted instance and the PlayRewire / Rewire name and branding
+- adding or removing maintainers
 
-### Stepping down
-Maintainers who are inactive for 6 months may be moved to emeritus status after a conversation with them.
+## Maintainers
 
-## Decision making
+The owner may invite contributors with sustained, high-quality work to become maintainers for an area. Maintainers can review and merge pull requests in their area and triage issues. They're listed in [MAINTAINERS.md](MAINTAINERS.md).
 
-1. **Lazy consensus** is the default. A proposal passes if no maintainer objects within 72 hours.
-2. **Significant changes** (architecture, curriculum structure, licensing, governance) need a written proposal as an issue or a doc in `docs/`, at least 7 days for comment, and approval from a majority of maintainers.
-3. If consensus can't be reached, maintainers vote. A simple majority wins.
+## How decisions are made
+
+1. **Everyday changes:** a maintainer reviews and merges.
+2. **Significant changes** (architecture, curriculum structure, licensing): open an issue or a design doc in `docs/` for discussion. The owner makes the final call.
+3. Discussion happens in the open on GitHub Issues and Discussions whenever possible.
+
+## Contributions and licensing
+
+All contributions are accepted under the project's licenses (Apache-2.0 for code, CC BY-SA 4.0 for lesson content) and require a [DCO](https://developercertificate.org/) sign-off. Contributing doesn't transfer ownership of the project or its name.
 
 ## Code of Conduct
 
-All participants follow the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Changes to this document
-
-Changes to governance follow the "significant changes" process above.
+Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).

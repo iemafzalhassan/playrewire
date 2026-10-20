@@ -10,7 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-e2572b?style=flat-square" alt="License: Apache-2.0"></a>
   <a href="#project-status"><img src="https://img.shields.io/badge/status-design%20phase-2a2620?style=flat-square" alt="Status: design phase"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-2a2620?style=flat-square" alt="PRs welcome"></a>
-  <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/code%20of%20conduct-CNCF-2a2620?style=flat-square" alt="Code of Conduct"></a>
+  <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant-2a2620?style=flat-square" alt="Code of Conduct"></a>
 </p>
 
 ---
@@ -50,7 +50,7 @@ Most learning platforms assume you already have the foundations, and most beginn
 | 🏅 **Verifiable certificates** | Open Badges 3.0 credentials you can add to **LinkedIn** and **Credly**. |
 | 📈 **Personal analytics** | A hand-drawn skill map of what you've learned and what keeps breaking. |
 | 🎨 **Paper & Ink design** | A unique hand-drawn look, accessible from day one. |
-| 🤖 **AI mentor (optional)** | Nudges instead of answers, streamed to the HUD over [AG-UI](https://docs.ag-ui.com). |
+| 🤖 **AI mentor (bring your own model)** | Nudges instead of answers, streamed to the HUD over [AG-UI](https://docs.ag-ui.com). Works with local models (Ollama, llama.cpp, LM Studio) or NVIDIA NIM, OpenRouter, OpenAI, Anthropic, Meta, DeepSeek, MiniMax, any OpenAI-compatible endpoint, and an optional [OmniRoute](https://github.com/diegosouzapw/OmniRoute) preset for pooled free tiers. Runs from your device with your own keys. |
 | 📦 **Every platform** | Linux (deb, rpm, AUR, Flatpak, AppImage), Windows, macOS, Android, iOS, Web. |
 
 ## The curriculum is the map
@@ -70,7 +70,7 @@ Most learning platforms assume you already have the foundations, and most beginn
 
 ## Architecture
 
-The core rule: **all code execution and rendering happen on the player's device. The cluster only stores progress, coordinates squads, and sends signals.**
+The core rule: **all code execution and rendering happen on the player's device. The cluster only stores progress, coordinates squads, and sends signals.** The one exception is a small, sandboxed `exam-checker` that verifies certification exams.
 
 ```mermaid
 flowchart LR
@@ -85,9 +85,9 @@ flowchart LR
   subgraph Cluster["Kubernetes cluster"]
     GW["Envoy Gateway"]
     subgraph Services["Go microservices"]
-      S1["identity"] & S2["session-guard"] & S3["progress"] & S4["practice-scheduler"]
+      S1["identity · Keycloak"] & S2["session-guard"] & S3["progress"] & S4["practice-scheduler"]
       S5["gamification"] & S6["squad"] & S7["content"] & S8["credential"]
-      S9["notification"] & S10["analytics"] & S11["mentor · AG-UI"]
+      S9["notification"] & S10["analytics"] & S11["mentor · AG-UI"] & S12["exam-checker"]
     end
     Bus[("NATS JetStream")]
     PG[("PostgreSQL<br/>CloudNativePG")]
@@ -102,7 +102,7 @@ flowchart LR
   Core <-- "gRPC / WebSocket over QUIC" --> GW
 ```
 
-Built on cloud-native open source: Kubernetes, Envoy, NATS, CloudNativePG, OpenTelemetry, Prometheus, Grafana, Cilium, Argo CD, cert-manager, Kyverno and Helm.
+Built on cloud-native open source: Kubernetes, Keycloak, Envoy, NATS, CloudNativePG, OpenTelemetry, Prometheus, Grafana, Cilium, Argo CD, cert-manager, Kyverno and Helm.
 
 📐 **Full design:** [docs/superpowers/specs/2026-10-21-playrewire-design.md](docs/superpowers/specs/2026-10-21-playrewire-design.md)
 
@@ -139,7 +139,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) to get started. All commits require a [D
 
 ## Governance
 
-See [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).
+PlayRewire is an independent, sole-owner open-source project led by [@iemafzalhassan](https://github.com/iemafzalhassan). See [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).
 
 ## License
 

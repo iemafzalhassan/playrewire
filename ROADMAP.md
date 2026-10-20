@@ -15,9 +15,10 @@ Prove the risky parts before building on them.
 - [ ] See → Type → Drill → Use chunk player
 - [ ] Local progress (SQLite), XP and streaks
 - [ ] Lesson-pack format v1
+- [ ] On-device AI mentor: local models + cloud providers + OmniRoute preset
 
 ## Phase 2: Online 🌐
-- [ ] Accounts, `session-guard` (one live session, activity heartbeats)
+- [ ] Keycloak login, `session-guard` (one live session, activity heartbeats)
 - [ ] Offline-first sync, `progress`, `practice-scheduler`
 - [ ] `notification` service
 - [ ] Personal skill map and "what broke" analytics
@@ -30,7 +31,7 @@ Prove the risky parts before building on them.
 - [ ] Leaderboards
 
 ## Phase 4: Certified 🏅
-- [ ] Guarded exam mode
+- [ ] Guarded exam mode and sandboxed `exam-checker`
 - [ ] Open Badges 3.0 issuer and verify page
 - [ ] LinkedIn and Credly sharing
 
@@ -43,4 +44,4 @@ Prove the risky parts before building on them.
 - [ ] Second programming language
 - [ ] Kids' mode
 - [ ] Engineer fast-track and placement challenges
-- [ ] CNCF Landscape submission and public launch
+- [ ] Public launch (Product Hunt, Show HN)

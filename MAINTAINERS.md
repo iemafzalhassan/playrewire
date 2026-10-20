@@ -2,9 +2,9 @@
 
 | Name | GitHub | Area |
 |---|---|---|
-| Afzal Hassan | [@iemafzalhassan](https://github.com/iemafzalhassan) | Project lead, all areas |
+| Afzal Hassan | [@iemafzalhassan](https://github.com/iemafzalhassan) | Owner, all areas |
 
-See [GOVERNANCE.md](GOVERNANCE.md) for how to become a reviewer or maintainer.
+Maintainers are invited by the owner. See [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Emeritus maintainers
 

@@ -16,7 +16,7 @@ Thanks for helping people learn to build. Every contribution counts, including c
 
 1. **Read the design doc:** [docs/superpowers/specs/2026-10-21-playrewire-design.md](docs/superpowers/specs/2026-10-21-playrewire-design.md).
 2. **For anything bigger than a small fix, open an issue first** so we can agree on the approach before you invest time.
-3. Be kind. This project follows the [CNCF Code of Conduct](CODE_OF_CONDUCT.md).
+3. Be kind. This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Developer Certificate of Origin (DCO)
 

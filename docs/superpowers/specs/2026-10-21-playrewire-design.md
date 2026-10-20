@@ -54,7 +54,7 @@ The name describes the promise. It rewires how you think, and the world is liter
 9. **Personal analytics** showing what you learned and what broke. **[Owner]**
 10. **Notification service.** **[Owner]**
 11. Backend as **microservices in the owner's own Kubernetes cluster.** **[Owner]**
-12. **Fully free and open source**, aimed at the CNCF Landscape and product-launch sites like Product Hunt. **[Owner]**
+12. **Fully free and open source**, a sole-owner open-source project, launched on product-launch sites like Product Hunt. **[Owner]**
 13. Start with **Go** and be built to add **any language** later. **[Owner]**
 14. A **unique, human-made UI**: minimal text, modern, interactive, using AG-UI for the AI mentor. **[Owner]**
 
@@ -68,7 +68,7 @@ The name describes the promise. It rewires how you think, and the world is liter
 - **Dropping beginners into code they haven't been taught.** The game must never ask for something not yet practiced. **[Owner]**
 - **Error screens that feel like punishment.** Red stack traces with no guidance count as a bug.
 - **Guilt-based engagement.** No dark patterns, no shaming notifications, no streaks you can buy back.
-- **Server-side code execution.** If our cluster ends up running player code, the architecture has failed. **[Owner]**
+- **Server-side code execution for learning.** If our cluster ends up running practice, mission or squad code, the architecture has failed. The single exception is the small `exam-checker` that verifies certification exams (§7.6). **[Owner]**
 - **Pay-to-win**, or rewards that buy learning shortcuts.
 - **Generic, template-looking AI-made UI.** **[Owner]**
 - **Realistic gun violence.** Action stays stylized (hacking, chases, heists) so the game stays age-friendly and app-store-friendly. **[Call]**
@@ -170,7 +170,19 @@ The practice scheduler is a spaced-repetition engine keyed by **concept**, not b
 ### 5.6 The AI mentor **[Call]**
 - An optional companion who watches your code in the lab and gives *Socratic* nudges, never full answers.
 - Streams into the HUD over the **AG-UI** protocol, so mentor events (thinking, hint, highlight line, celebrate) are a standard event stream the UI renders. **[Owner: AG-UI]**
-- The model provider is pluggable, with a local-model option so self-hosters pay nothing. **[Open: default provider]**
+- **Bring your own model: local or cloud. [Owner]** The player picks a provider in settings:
+
+  | Kind | Providers |
+  |---|---|
+  | **Local (free, offline, private)** | Ollama, llama.cpp server, LM Studio, or any local OpenAI-compatible server |
+  | **Cloud** | NVIDIA NIM, OpenRouter, OpenAI, Anthropic, Meta (Llama API), DeepSeek, MiniMax |
+  | **Anything else** | A generic **OpenAI-compatible endpoint** (base URL + key + model), which covers most remaining providers |
+  | **Aggregator** | **OmniRoute** preset: points the mentor at a locally running [OmniRoute](https://github.com/diegosouzapw/OmniRoute) gateway (default `http://localhost:20128`), which pools free tiers and signup credits across many providers |
+
+- **How it's built [Call]:** a `MentorProvider` interface in the Rust core with two adapters, *OpenAI-compatible* (most providers, local servers and OmniRoute) and *Anthropic Messages*. Adding a provider is a small adapter or just a preset entry.
+- **Where calls run [Call]:** by default from the **player's device** with the **player's own keys**, so the mentor costs our cluster nothing. API keys live in the OS keychain (Keychain, Credential Manager, Secret Service) and are never synced to our servers. The `mentor` service is optional and only needed if an instance operator wants to offer a hosted model.
+- **OmniRoute caveats [Call]:** it's off by default and the player installs it themselves. Settings show a short notice that free-tier terms vary by provider and that OmniRoute sees all prompts. Mentor prompts never include personal data, only the current exercise and code.
+- **Graceful when absent:** with no provider set, the mentor is replaced by the built-in, non-AI hint ladder that every lesson ships with.
 
 ---
 
@@ -238,7 +250,7 @@ The backend is written in Go so the codebase can serve as curriculum material in
 | Service | Responsibility | Main storage |
 |---|---|---|
 | `gateway` | Envoy Gateway: TLS, routing, rate limits, auth checks | n/a |
-| `identity` | Accounts and login (Ory Kratos + Hydra, or Keycloak) **[Open: pick one]** | PostgreSQL |
+| `identity` | **Keycloak**, already running in the owner's cluster **[Owner]**. Integrated over OIDC (PKCE for the apps). Wired up **after the MVP**; the MVP runs with local-only profiles. | Keycloak's own DB |
 | `session-guard` | One live session per user, heartbeat leases, activity state | Valkey |
 | `progress` | Chunks completed, mastery per concept, district unlocks | PostgreSQL |
 | `practice-scheduler` | Spaced repetition: which concepts to drill when | PostgreSQL |
@@ -248,7 +260,8 @@ The backend is written in Go so the codebase can serve as curriculum material in
 | `credential` | Open Badges 3.0 issuing, signing, verify endpoint | PostgreSQL |
 | `notification` | Push (FCM/APNs), email, in-app; quiet hours and frequency caps | PostgreSQL |
 | `analytics` | Learning-event ingestion; per-user and per-lesson insights | ClickHouse |
-| `mentor` | AI mentor and AG-UI event stream | Stateless |
+| `exam-checker` | **The only service that runs player code**, and only for certification exams: re-runs a submitted exam solution against hidden tests in a hardened sandbox **[Owner]** | Ephemeral |
+| `mentor` | Optional hosted AI mentor and AG-UI event stream; by default the mentor runs on-device (§5.6) | Stateless |
 
 - **Communication:** gRPC (Connect) between client and services, WebSocket or QUIC for squad realtime, and **NATS JetStream** as the event bus between services.
 - **Data:** PostgreSQL via **CloudNativePG**, **Valkey** for leases, leaderboards and squad state, **ClickHouse** for analytics, and S3-compatible object storage plus a CDN for content packs, 3D assets and Go toolchains.
@@ -263,7 +276,11 @@ The backend is written in Go so the codebase can serve as curriculum material in
 ### 7.6 Verifying results without running code on servers **[Call]**
 - **Solo practice:** trust the client. Cheating only cheats yourself.
 - **Squad tasks:** the other squad members' clients re-run the solution against the signed hidden tests. A task needs a majority to agree.
-- **Certification exams:** the signed submission is sent through `squad` to **two or more random online players' clients**, which re-run it against hidden tests. Results must agree before `credential` issues the badge. If not enough peers are online, it waits in a queue. **[Open: is this acceptable, or allow one tiny server-side verifier for exams only?]**
+- **Certification exams: a small server-side `exam-checker`. [Owner]** The client sends the signed final submission. `exam-checker` re-runs it once against the hidden tests and tells `credential` whether to issue the badge. Its limits **[Call]**:
+  - Runs **only** final exam submissions, never practice, missions or squad code.
+  - Each run is in a gVisor (or Kata) sandboxed pod with no network, read-only root, and strict CPU, memory and time limits (for example 1 vCPU, 256 MiB, 10 s).
+  - Rate limited per user (one check per exam attempt), queued through NATS, and scaled to zero when idle.
+  - Exams are small by design, so the cost stays a tiny fraction of what server-side practice would cost.
 - Hidden tests are encrypted per attempt and signed by `content`, so they can't be read in advance.
 
 ### 7.7 Offline first
@@ -309,11 +326,12 @@ Releases are reproducible CI builds with signed artifacts (Sigstore/cosign), an 
 ## 10. Open source and launch **[Owner: fully open, free. Call: specifics]**
 
 - **License:** Apache-2.0 for code, CC BY-SA 4.0 for lesson content, CC0/CC-BY for art assets.
-- **Governance:** `GOVERNANCE.md`, `MAINTAINERS.md`, the CNCF Code of Conduct, a DCO sign-off on commits, `SECURITY.md`, and a public roadmap.
+- **Ownership [Owner]:** an independent, **sole-owner** open-source project, not part of any foundation. The owner has final say on direction and releases, and contributions are welcome under the license.
+- **Governance:** `GOVERNANCE.md` (owner-led), `MAINTAINERS.md`, the Contributor Covenant Code of Conduct, a DCO sign-off on commits, `SECURITY.md`, and a public roadmap.
 - **Funding:** GitHub Sponsors and Open Collective to cover cluster and CDN costs.
 - **Self-hosting:** a Helm chart and docs so schools and companies can run their own instance.
-- **CNCF Landscape:** submit as an open-source project once the repo has a working release, docs, and a clear cloud-native story (built entirely on CNCF projects, deployable with Helm, and teaching cloud-native engineering). Category fit needs checking with the Landscape maintainers. **[Open: target category]**
-- **Launch sites:** Product Hunt, Hacker News (Show HN), dev.to, Reddit (r/golang, r/learnprogramming), and the Go and CNCF community channels.
+- **Foundation listings:** deferred. Nothing foundation-related goes into the repo for now. **[Owner]**
+- **Launch sites:** Product Hunt, Hacker News (Show HN), dev.to, Reddit (r/golang, r/learnprogramming), and the Go community channels.
 
 ---
 
@@ -322,21 +340,23 @@ Releases are reproducible CI builds with signed artifacts (Sigstore/cosign), an 
 | Phase | Ships |
 |---|---|
 | **0: Spikes** | Bevy-in-webview performance on mid-range phones; Yaegi-WASM lab; Linux sandbox lab-runner; ink shader prototype |
-| **1: First playable** | Desktop (Linux first) and web; Silicon Quarter + Go Academy basics; See/Type/Drill/Use; local progress; XP and streaks |
-| **2: Online** | Accounts, session-guard, sync, progress, practice-scheduler, notifications, personal analytics |
+| **1: First playable (MVP)** | Desktop (Linux first) and web; Silicon Quarter + Go Academy basics; See/Type/Drill/Use; local-only profile and progress; XP and streaks; on-device AI mentor with local and cloud providers |
+| **2: Online** | **Keycloak** login (wired up after the MVP), session-guard, sync, progress, practice-scheduler, notifications, personal analytics |
 | **3: Squads** | Friends, squad heists, peer verification, leaderboards |
-| **4: Certified** | Exams, Open Badges issuer, LinkedIn/Credly sharing |
+| **4: Certified** | Exams, `exam-checker`, Open Badges issuer, LinkedIn/Credly sharing |
 | **5: Everywhere** | Android, iOS, macOS, Windows packages; all ten districts complete |
 | **6: Grow** | New languages, kids' mode, engineer fast-track |
 
 ---
 
-## 12. Decisions still open (the owner's call)
+## 12. Owner decisions (resolved 2026-10-21)
 
-1. **Exam verification:** is peer re-run only acceptable, or should a tiny server-side verifier be allowed for exams only? (§7.6)
-2. **Identity provider:** Ory or Keycloak. (§7.4)
-3. **Default AI mentor provider** for the hosted instance. (§5.6)
-4. **CNCF Landscape category** to target. (§10)
+1. **Exam verification:** a small server-side `exam-checker`, used only for certification exams. (§7.6)
+2. **Identity provider:** Keycloak, already running in the cluster, wired up after the MVP. (§7.4, §11)
+3. **AI mentor:** local models plus NVIDIA NIM, OpenRouter, OpenAI, Anthropic, Meta, DeepSeek, MiniMax, any OpenAI-compatible endpoint, and an OmniRoute preset. (§5.6)
+4. **Foundation listings:** deferred; the repo stays an independent, sole-owner project. (§10)
+
+No owner decisions are open right now.
 
 ## 13. Left to the builder
 - Exact service boundaries inside the table in §7.4 (it's fine to merge services early and split later).
