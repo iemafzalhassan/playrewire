@@ -220,7 +220,7 @@ async fn cannot_write_outside_work() {
     let host_probe = host_dir.join(format!("rewire-lab-escape-{}", std::process::id()));
     let host_probe = host_probe.to_str().unwrap();
     let src = format!(
-        "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {{\n\tfor _, p := range []string{{\"/escape\", \"/etc/escape\", \"/opt/go/escape\", \"/opt/go/bin/escape\", \"/proc/escape\", \"/sys/escape\", \"/dev/escape\", \"/usr/escape\", \"/home/escape\", {host_probe:?}}} {{\n\t\tif err := os.WriteFile(p, []byte(\"x\"), 0o644); err == nil {{\n\t\t\tfmt.Println(\"WROTE\", p)\n\t\t}}\n\t}}\n\tfor _, p := range []string{{\"/work/ok\", \"/tmp/ok\", \"/cache/ok\"}} {{\n\t\tif err := os.WriteFile(p, []byte(\"x\"), 0o644); err != nil {{\n\t\t\tfmt.Println(\"FAILED\", p, err)\n\t\t}}\n\t}}\n\tfmt.Println(\"done\")\n}}\n"
+        "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {{\n\tfor _, p := range []string{{\"/escape\", \"/etc/escape\", \"/opt/go/escape\", \"/opt/go/bin/escape\", \"/proc/escape\", \"/sys/escape\", \"/dev/escape\", \"/usr/escape\", \"/home/escape\", \"/cache/escape\", {host_probe:?}}} {{\n\t\tif err := os.WriteFile(p, []byte(\"x\"), 0o644); err == nil {{\n\t\t\tfmt.Println(\"WROTE\", p)\n\t\t}}\n\t}}\n\tfor _, p := range []string{{\"/work/ok\", \"/tmp/ok\"}} {{\n\t\tif err := os.WriteFile(p, []byte(\"x\"), 0o644); err != nil {{\n\t\t\tfmt.Println(\"FAILED\", p, err)\n\t\t}}\n\t}}\n\tfmt.Println(\"done\")\n}}\n"
     );
     let r = run(&src, Limits::default()).await;
     assert_eq!(r.stdout, "done\n", "stderr: {}", r.stderr);
@@ -230,15 +230,16 @@ async fn cannot_write_outside_work() {
 #[tokio::test]
 async fn file_size_limit() {
     require_sandbox!();
-    // 1 MiB limit, 2 MiB writes to every writable place.
+    // 1 MiB limit, 2 MiB writes to every writable place (/cache is not
+    // mounted in the run phase).
     let limits = Limits {
         max_file_bytes: 1 << 20,
         ..Limits::default()
     };
-    let src = "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\tbuf := make([]byte, 2<<20)\n\tfor _, p := range []string{\"/work/big\", \"/tmp/big\", \"/cache/big\"} {\n\t\terr := os.WriteFile(p, buf, 0o644)\n\t\tst, _ := os.Stat(p)\n\t\tfmt.Println(p, err != nil, st.Size())\n\t\tos.Remove(p)\n\t}\n}\n";
+    let src = "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\tbuf := make([]byte, 2<<20)\n\tfor _, p := range []string{\"/work/big\", \"/tmp/big\"} {\n\t\terr := os.WriteFile(p, buf, 0o644)\n\t\tst, _ := os.Stat(p)\n\t\tfmt.Println(p, err != nil, st.Size())\n\t\tos.Remove(p)\n\t}\n}\n";
     let r = run(src, limits).await;
     assert_eq!(
-        r.stdout, "/work/big true 1048576\n/tmp/big true 1048576\n/cache/big true 1048576\n",
+        r.stdout, "/work/big true 1048576\n/tmp/big true 1048576\n",
         "stderr: {}",
         r.stderr
     );
@@ -279,6 +280,63 @@ async fn nested_userns_denied() {
         r.stderr
     );
     assert!(!r.stdout.contains("IN NESTED USERNS"));
+}
+
+#[tokio::test]
+async fn workdir_removed_even_after_chmod_000() {
+    require_sandbox!();
+    // The program leaves a uniquely named marker in /work and locks a nested
+    // directory with chmod 000. Afterwards no rewire-lab-* dir in the host
+    // temp dir may still hold the marker.
+    let marker = format!(
+        "marker-{}-{}",
+        std::process::id(),
+        Instant::now().elapsed().as_nanos()
+    );
+    let src = format!(
+        "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {{\n\tos.WriteFile(\"/work/{marker}\", []byte(\"x\"), 0o644)\n\tos.MkdirAll(\"/work/a/b/c\", 0o755)\n\tos.WriteFile(\"/work/a/b/c/secret\", []byte(\"x\"), 0o644)\n\tif err := os.Chmod(\"/work/a/b\", 0); err != nil {{\n\t\tfmt.Println(\"chmod failed\", err)\n\t}}\n\tif err := os.Chmod(\"/work/a\", 0); err != nil {{\n\t\tfmt.Println(\"chmod failed\", err)\n\t}}\n\tif _, err := os.ReadDir(\"/work/a\"); err == nil {{\n\t\tfmt.Println(\"still readable\")\n\t}}\n\tfmt.Println(\"locked\")\n}}\n"
+    );
+    let r = run(&src, Limits::default()).await;
+    assert_eq!(r.stdout, "locked\n", "stderr: {}", r.stderr);
+    let leftovers: Vec<PathBuf> = std::fs::read_dir(std::env::temp_dir())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("rewire-lab-"))
+        .map(|e| e.path().join(&marker))
+        .filter(|p| p.symlink_metadata().is_ok())
+        .collect();
+    assert!(leftovers.is_empty(), "workdir left behind: {leftovers:?}");
+}
+
+#[tokio::test]
+async fn run_phase_has_no_cache() {
+    require_sandbox!();
+    let src = "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n\nfunc main() {\n\t_, err := os.Stat(\"/cache\")\n\tfmt.Println(os.IsNotExist(err))\n}\n";
+    let r = run(src, Limits::default()).await;
+    assert_eq!(r.stdout, "true\n", "stderr: {}", r.stderr);
+}
+
+#[tokio::test]
+async fn cache_symlink_is_repaired() {
+    require_sandbox!();
+    let cache = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("/nonexistent/evil", cache.path().join("build")).unwrap();
+    std::fs::write(cache.path().join("gopath"), "not a dir").unwrap();
+    let rt = runtime_with(cache.path());
+    let r = rt
+        .run(
+            main_go(
+                "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"repaired\")\n}\n",
+            ),
+            Limits::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.stdout, "repaired\n", "stderr: {}", r.stderr);
+    for sub in ["build", "gopath"] {
+        let m = cache.path().join(sub).symlink_metadata().unwrap();
+        assert!(m.is_dir(), "{sub} is a real directory again");
+    }
 }
 
 #[tokio::test]

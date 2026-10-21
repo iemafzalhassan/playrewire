@@ -7,6 +7,9 @@ thing between it and the user's files, network and system.
 ## How it runs
 
 Each run gets a fresh temporary work directory, which is removed afterwards.
+Removal works even if learner code locked directories with `chmod 000`: before
+deleting, the runner gives every directory back owner access. It opens each
+one by file descriptor and never follows a symlink.
 The code runs in two phases, and each phase is its own bubblewrap
 (`bwrap`) sandbox:
 
@@ -15,9 +18,10 @@ The code runs in two phases, and each phase is its own bubblewrap
 2. Run: `/work/prog`, under the learner limits.
 
 Inside the sandbox the root is empty and read-only. It holds only these:
-the Go toolchain (read-only at `/opt/go`), the work directory (`/work`), the
-build cache (`/cache`), a private `/proc`, a minimal read-only `/dev`, and a
-private `/tmp`. The exact argument list is in `src/sandbox.rs`.
+the Go toolchain (read-only at `/opt/go`), the work directory (`/work`), a
+private `/proc`, a minimal read-only `/dev`, and a private `/tmp`. The build
+cache (`/cache`) is mounted **only in the compile phase**. The learner's
+program never sees it. The exact argument list is in `src/sandbox.rs`.
 
 ## What is contained
 
@@ -30,12 +34,18 @@ Each item has a test in `tests/go_native.rs`.
   namespace, so `/proc` shows only bwrap's init and the program.
 - **Environment**: no host variables leak in. The environment is cleared and
   then set to a fixed list.
-- **Writes outside `/work`, `/cache` and `/tmp`**: they fail. The root and
-  `/dev` are read-only, and `/opt/go` is a read-only bind.
+- **Writes outside `/work` and `/tmp`**: they fail. The root and `/dev` are
+  read-only, `/opt/go` is a read-only bind, and `/cache` doesn't exist while
+  the program runs.
+- **The build cache**: only the Go toolchain writes it, in the compile phase.
+  Before each run, the host checks that `build/` and `gopath/` are real
+  directories. If one isn't (for example a planted symlink), it is removed
+  without being followed, and then recreated.
 - **File size**: each file the program writes is capped at 10 MiB
   (`RLIMIT_FSIZE`). The whole of `/tmp` is capped at 64 MiB.
-- **CPU and wall time**: the program gets 10 s of CPU (`RLIMIT_CPU`) and 10 s
-  of wall time. When time runs out, the whole process group is killed. The
+- **CPU and wall time**: the program gets 10 s of CPU and 10 s of wall time.
+  The CPU limit (`RLIMIT_CPU`) has its soft and hard values equal, so the
+  kernel kills the program at exactly 10 s of CPU. When time runs out, the whole process group is killed. The
   sandbox dies with its parent, and the process namespace takes any leftover
   processes with it.
 - **Output**: stdout and stderr together are capped at 64 KiB. Past the cap,
@@ -65,10 +75,16 @@ bigger packages such as `net/http` needs about 100 MB of `/tmp`.
   bomb) within its 10 s.
 - **No seccomp filter.** Every system call the kernel allows to an
   unprivileged user is reachable.
-- **`/cache` persists across runs.** A program can write there. It can leave
-  data behind, use disk space, or tamper with cached build output that later
-  compiles reuse. Tampered output still runs only inside the sandbox. Clearing
-  the cache fixes it.
+- **`/cache` persists across runs, but only the toolchain writes it.** Learner
+  code can't reach the cache. The remaining risk is the compile phase itself:
+  a compiler bug triggered by crafted source could write bad cache entries.
+  Anything built from them still runs only inside the sandbox. Clearing the
+  cache fixes it.
+- **Disk use in `/work`.** Each file is capped at 10 MiB, but nothing caps the
+  number of files. A program can write many of them during its 10 s. `/work`
+  lives in the host temp dir, which is RAM on some systems. It is removed after
+  the run, but until then it counts against the host. A directory nested deeper
+  than the open-file limit may not be fully removed; the runner logs this.
 - **Go ignores SIGXFSZ.** A Go program that hits the file size limit gets a
   "file too large" write error instead of being killed. If the code ignores
   that error, the run looks normal.

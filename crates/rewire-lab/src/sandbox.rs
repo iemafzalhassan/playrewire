@@ -2,9 +2,10 @@
 //! resource limits and the capped output reader.
 //!
 //! Containment comes from bwrap (`--unshare-all`: user, mount, pid, net, ipc,
-//! uts and cgroup namespaces; a fresh empty root holding only the Go
-//! toolchain read-only, the per-run workdir, the cache, a private `/proc`,
-//! a minimal `/dev` and a private `/tmp`). This module adds what bwrap does not
+//! uts and cgroup namespaces; nested user namespaces disabled; a fresh
+//! read-only root holding only the Go toolchain read-only, the per-run
+//! workdir, the cache (compile phase only), a private `/proc`, a read-only
+//! minimal `/dev` and a size-capped private `/tmp`). This module adds what bwrap does not
 //! do on its own: CPU and file-size rlimits, a wall clock, killing the whole
 //! process group, and a cap on output.
 
@@ -25,11 +26,32 @@ use crate::runtime::LabError;
 pub const SANDBOX_UNAVAILABLE: &str =
     "Rewire couldn't start its safe practice space on this system. See docs: Linux sandbox setup.";
 
-/// Checks that bubblewrap can create its namespaces on this host by running
-/// `bwrap --unshare-all --ro-bind / / true`.
+/// The probe's bwrap arguments (controller ruling, deviates from the brief's
+/// plain `--unshare-all --ro-bind / / true`). It exercises every hardening
+/// flag the real runs use, so an old bwrap (e.g. 0.6, no `--disable-userns`)
+/// fails here with the friendly message instead of later as a fake compile
+/// error.
+pub(crate) const PROBE_ARGS: [&str; 13] = [
+    "--unshare-all",
+    "--unshare-user",
+    "--disable-userns",
+    "--size",
+    "1048576",
+    "--tmpfs",
+    "/tmp",
+    "--ro-bind",
+    "/",
+    "/",
+    "--remount-ro",
+    "/",
+    "true",
+];
+
+/// Checks that bubblewrap can create its namespaces, with the hardening flags
+/// the lab relies on, on this host.
 pub fn sandbox_probe() -> Result<(), LabError> {
     let ok = std::process::Command::new(bwrap_path())
-        .args(["--unshare-all", "--ro-bind", "/", "/", "true"])
+        .args(PROBE_ARGS)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -49,7 +71,7 @@ pub fn sandbox_probe() -> Result<(), LabError> {
 /// an executor thread.
 pub(crate) async fn sandbox_probe_async() -> Result<(), LabError> {
     let ok = Command::new(bwrap_path())
-        .args(["--unshare-all", "--ro-bind", "/", "/", "true"])
+        .args(PROBE_ARGS)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -85,7 +107,9 @@ fn bwrap_path() -> PathBuf {
 pub(crate) struct Sandbox<'a> {
     pub go_root: &'a Path,
     pub workdir: &'a Path,
-    pub cache_dir: &'a Path,
+    /// Bound read-write at `/cache` when `Some`. Only the compile phase gets
+    /// it; the learner's program never sees the persistent cache.
+    pub cache_dir: Option<&'a Path>,
     pub network: bool,
     /// Size cap for the private `/tmp` tmpfs (`--size`).
     pub tmp_bytes: u64,
@@ -125,9 +149,11 @@ impl Sandbox<'_> {
         a.push("--bind".into());
         a.push(self.workdir.into());
         a.push("/work".into());
-        a.push("--bind".into());
-        a.push(self.cache_dir.into());
-        a.push("/cache".into());
+        if let Some(cache_dir) = self.cache_dir {
+            a.push("--bind".into());
+            a.push(cache_dir.into());
+            a.push("/cache".into());
+        }
         for x in ["--proc", "/proc", "--dev", "/dev"] {
             a.push(x.into());
         }
@@ -234,7 +260,9 @@ pub(crate) async fn run_phase(
             if libc::setsid() < 0 {
                 return Err(io::Error::last_os_error());
             }
-            set_rlimit(libc::RLIMIT_CPU, cpu, cpu.saturating_add(1))?;
+            // soft == hard: the kernel SIGKILLs at exactly `cpu` seconds
+            // (Go ignores SIGXCPU, so a soft-only limit would not stop it).
+            set_rlimit(libc::RLIMIT_CPU, cpu, cpu)?;
             set_rlimit(libc::RLIMIT_FSIZE, fsize, fsize)?;
             // Defence in depth: no inherited host fd survives exec, even one
             // some other part of the app opened without O_CLOEXEC. Best
@@ -391,6 +419,14 @@ pub(crate) struct Verdict {
     pub file_too_large: bool,
 }
 
+/// True when bwrap itself failed to set up the sandbox (exit 1 with its own
+/// `bwrap:` error prefix, e.g. "bwrap: Unknown option --disable-userns").
+/// Only meaningful for the compile phase: `go build` output never starts with
+/// `bwrap:`, while a learner's program could print anything.
+pub(crate) fn bwrap_setup_failed(o: &PhaseOutcome) -> bool {
+    !o.wall_killed && !o.truncated && o.status.code() == Some(1) && o.stderr.starts_with(b"bwrap:")
+}
+
 const SIG_EXIT_BASE: i32 = 128;
 
 pub(crate) fn verdict(o: &PhaseOutcome) -> Verdict {
@@ -422,7 +458,8 @@ pub(crate) fn verdict(o: &PhaseOutcome) -> Verdict {
         }
     };
     if code == SIG_EXIT_BASE + libc::SIGXCPU || code == SIG_EXIT_BASE + libc::SIGKILL {
-        // RLIMIT_CPU: SIGXCPU at the soft limit, SIGKILL at the hard limit.
+        // RLIMIT_CPU (soft == hard, so the kernel sends SIGKILL); 128+SIGXCPU
+        // covers non-Go programs that die from the soft-limit signal.
         return Verdict {
             exit_code: None,
             timed_out: true,
@@ -540,21 +577,61 @@ mod tests {
         assert!(!c.truncated, "exactly at the cap is not truncation");
     }
 
+    const TAIL: &str = "--proc /proc --dev /dev --size 67108864 --tmpfs /tmp --remount-ro / --remount-ro /dev --chdir /work --setenv GOROOT /opt/go --setenv GOCACHE /cache/build --setenv GOPATH /cache/gopath --setenv GOTOOLCHAIN local --setenv GOFLAGS -mod=mod --setenv CGO_ENABLED 0 --setenv HOME /tmp --setenv PATH /opt/go/bin";
+    const HEAD: &str = "--unshare-all --unshare-user --disable-userns --die-with-parent --new-session --clearenv --ro-bind /g /opt/go --bind /w /work";
+
+    fn joined(sb: &Sandbox<'_>) -> String {
+        sb.args()
+            .into_iter()
+            .map(|a| a.into_string().unwrap())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     #[test]
-    fn args_are_the_pinned_list() {
+    fn compile_args_bind_the_cache() {
         let sb = Sandbox {
             tmp_bytes: RUN_TMP_BYTES,
             go_root: Path::new("/g"),
             workdir: Path::new("/w"),
-            cache_dir: Path::new("/c"),
+            cache_dir: Some(Path::new("/c")),
             network: false,
         };
-        let got: Vec<String> = sb
-            .args()
-            .into_iter()
-            .map(|a| a.into_string().unwrap())
-            .collect();
-        let want = "--unshare-all --unshare-user --disable-userns --die-with-parent --new-session --clearenv --ro-bind /g /opt/go --bind /w /work --bind /c /cache --proc /proc --dev /dev --size 67108864 --tmpfs /tmp --remount-ro / --remount-ro /dev --chdir /work --setenv GOROOT /opt/go --setenv GOCACHE /cache/build --setenv GOPATH /cache/gopath --setenv GOTOOLCHAIN local --setenv GOFLAGS -mod=mod --setenv CGO_ENABLED 0 --setenv HOME /tmp --setenv PATH /opt/go/bin";
-        assert_eq!(got.join(" "), want);
+        assert_eq!(joined(&sb), format!("{HEAD} --bind /c /cache {TAIL}"));
+    }
+
+    #[test]
+    fn run_args_have_no_cache_bind() {
+        let sb = Sandbox {
+            tmp_bytes: RUN_TMP_BYTES,
+            go_root: Path::new("/g"),
+            workdir: Path::new("/w"),
+            cache_dir: None,
+            network: false,
+        };
+        assert_eq!(joined(&sb), format!("{HEAD} {TAIL}"));
+    }
+
+    #[test]
+    fn probe_uses_hardening_flags() {
+        assert_eq!(
+            PROBE_ARGS.join(" "),
+            "--unshare-all --unshare-user --disable-userns --size 1048576 --tmpfs /tmp --ro-bind / / --remount-ro / true"
+        );
+    }
+
+    #[test]
+    fn bwrap_errors_are_recognised() {
+        let mut o = exited(1);
+        o.stderr = b"bwrap: Unknown option --disable-userns\n".to_vec();
+        assert!(bwrap_setup_failed(&o));
+        o.stderr = b"# lab\n./main.go:3:2: \"bwrap: Unknown option\" (untyped string constant) is not used\n".to_vec();
+        assert!(
+            !bwrap_setup_failed(&o),
+            "compiler output is never a bwrap failure"
+        );
+        let mut o = exited(2);
+        o.stderr = b"bwrap: x".to_vec();
+        assert!(!bwrap_setup_failed(&o));
     }
 }

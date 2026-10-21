@@ -3,13 +3,14 @@
 
 use std::collections::HashSet;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::runtime::{LabError, LanguageRuntime, Limits, RawRunResult, SourceFile};
 use crate::sandbox::{
-    COMPILE_TMP_BYTES, PhaseLimits, PhaseOutcome, RUN_TMP_BYTES, Sandbox, run_phase,
-    sandbox_probe_async, verdict,
+    COMPILE_TMP_BYTES, PhaseLimits, PhaseOutcome, RUN_TMP_BYTES, SANDBOX_UNAVAILABLE, Sandbox,
+    bwrap_setup_failed, run_phase, sandbox_probe_async, verdict,
 };
+use crate::workdir::WorkDir;
 
 /// The `go.mod` written next to the learner's files.
 const GO_MOD: &str = "module lab\n\ngo 1.27\n";
@@ -29,10 +30,14 @@ const FILE_TOO_LARGE_NOTE: &str =
 /// Runs Go with the toolchain at `go_root` (bound read-only at `/opt/go`).
 ///
 /// `cache_dir` is persistent and shared across runs (`build/` is GOCACHE,
-/// `gopath/` is GOPATH); it is created if missing. Each run gets a fresh
-/// temporary workdir, removed afterwards.
+/// `gopath/` is GOPATH); it is created if missing. It is bound read-write
+/// only for the compile phase, never for the learner's program. Each run gets
+/// a fresh temporary workdir, removed afterwards.
 pub struct GoNativeRuntime {
     pub go_root: PathBuf,
+    /// Must be app-private (e.g. the app data dir). Never point it at the
+    /// user's real GOCACHE or GOPATH: the sandboxed toolchain writes here, and
+    /// `build/` and `gopath/` are replaced if they are not real directories.
     pub cache_dir: PathBuf,
 }
 
@@ -53,11 +58,14 @@ impl LanguageRuntime for GoNativeRuntime {
         }
         sandbox_probe_async().await?;
 
-        std::fs::create_dir_all(self.cache_dir.join("build"))?;
-        std::fs::create_dir_all(self.cache_dir.join("gopath"))?;
+        std::fs::create_dir_all(&self.cache_dir)?;
+        for sub in ["build", "gopath"] {
+            ensure_real_dir(&self.cache_dir.join(sub))?;
+        }
 
-        // Dropped (and removed) on every return path.
-        let workdir = tempfile::Builder::new().prefix("rewire-lab-").tempdir()?;
+        // Dropped (and removed, even if learner code locked parts of it) on
+        // every return path.
+        let workdir = WorkDir::new()?;
         std::fs::write(workdir.path().join("go.mod"), GO_MOD)?;
         for f in &files {
             std::fs::write(workdir.path().join(&f.name), &f.source)?;
@@ -66,12 +74,14 @@ impl LanguageRuntime for GoNativeRuntime {
         let compile_sb = Sandbox {
             go_root: &self.go_root,
             workdir: workdir.path(),
-            cache_dir: &self.cache_dir,
+            cache_dir: Some(&self.cache_dir),
             network: limits.network,
             tmp_bytes: COMPILE_TMP_BYTES,
         };
+        // The learner's program never sees the persistent cache.
         let run_sb = Sandbox {
             tmp_bytes: RUN_TMP_BYTES,
+            cache_dir: None,
             ..compile_sb
         };
 
@@ -88,6 +98,13 @@ impl LanguageRuntime for GoNativeRuntime {
             },
         )
         .await?;
+        if bwrap_setup_failed(&compile) {
+            // bwrap itself refused (e.g. an old version without a flag we
+            // pass); the compiler never ran, so this is not a compile error.
+            return Err(LabError::SandboxUnavailable(
+                SANDBOX_UNAVAILABLE.to_string(),
+            ));
+        }
         let v = verdict(&compile);
         if v.exit_code != Some(0) {
             return Ok(to_result(compile, 0));
@@ -123,6 +140,19 @@ fn to_result(o: PhaseOutcome, duration_ms: u64) -> RawRunResult {
         truncated: o.truncated,
         duration_ms,
     }
+}
+
+/// Makes `path` a real directory. If it is anything else (a symlink, perhaps
+/// dangling, or a file), it is removed without following it and recreated.
+fn ensure_real_dir(path: &Path) -> io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => return Ok(()),
+        // `remove_file` unlinks a symlink itself, never its target.
+        Ok(_) => std::fs::remove_file(path)?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::create_dir(path)
 }
 
 /// Accepts only distinct plain `[A-Za-z0-9_]+.go` basenames: no separators,

@@ -2,6 +2,7 @@
 mod go_native;
 mod runtime;
 mod sandbox;
+mod workdir;
 
 pub use go_native::GoNativeRuntime;
 pub use runtime::{LabError, LanguageRuntime, Limits, RawRunResult, SourceFile};
