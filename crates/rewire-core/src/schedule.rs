@@ -10,10 +10,12 @@ const MAX_BOX: u8 = 5;
 /// Clean success (first try, no hints) moves up a box; other success stays; fail goes to box 0.
 pub(crate) fn update_concept(prev: &ConceptState, rec: &StepRecord) -> ConceptState {
     let mut c = prev.clone();
+    // Saved JSON can hold any u8; clamp before it indexes INTERVALS.
+    c.box_level = c.box_level.min(MAX_BOX);
     if rec.success {
         c.successes += 1;
         if rec.first_try && rec.hints_used == 0 {
-            c.box_level = (c.box_level + 1).min(MAX_BOX);
+            c.box_level = c.box_level.saturating_add(1).min(MAX_BOX);
         }
     } else {
         c.fails += 1;

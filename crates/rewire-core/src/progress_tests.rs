@@ -374,3 +374,26 @@ fn old_or_partial_json_loads() {
     let s: ProgressState = serde_json::from_str(r#"{"xp":12,"streak":{"current":2}}"#).unwrap();
     assert_eq!((s.xp, s.streak.current, s.streak.freezes), (12, 2, 0));
 }
+
+#[test]
+fn out_of_range_box_level_does_not_panic() {
+    // A hand-edited or corrupt save can hold any u8; it must clamp, not index out of bounds.
+    for bad in [6u8, 200, u8::MAX] {
+        let mut s = ProgressState::default();
+        s.concepts.insert(
+            "loops".into(),
+            ConceptState {
+                box_level: bad,
+                ..ConceptState::default()
+            },
+        );
+        let (ok, _) = apply(&s, &rec("c1", Step::Drill, true, true, day(0)));
+        assert_eq!(ok.concepts["loops"].box_level, 5);
+        assert_eq!(ok.concepts["loops"].due, day(30));
+        let (fail, _) = apply(&s, &rec("c2", Step::Drill, false, false, day(0)));
+        assert_eq!(fail.concepts["loops"].box_level, 0);
+        // Not a clean success: box stays, but is clamped before the interval lookup.
+        let (same, _) = apply(&s, &rec("c3", Step::Drill, true, false, day(0)));
+        assert_eq!(same.concepts["loops"].box_level, 5);
+    }
+}
