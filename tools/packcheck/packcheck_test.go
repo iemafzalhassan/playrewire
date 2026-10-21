@@ -116,7 +116,6 @@ func TestValidPackBundles(t *testing.T) {
 	}
 }
 
-
 func TestGoodBundleIsNotStale(t *testing.T) {
 	l, is := Validate(goodDir)
 	if len(is) > 0 {
