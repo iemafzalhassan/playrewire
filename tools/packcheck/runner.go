@@ -160,6 +160,9 @@ func normalizeOutput(s string) string {
 
 // failureDetail summarizes why a run failed, for error messages.
 func failureDetail(r Result) string {
+	if r.TimedOut {
+		return r.Err.Error()
+	}
 	d := strings.TrimSpace(r.Stderr)
 	if d == "" {
 		d = r.Err.Error()

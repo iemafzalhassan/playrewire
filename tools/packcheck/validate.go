@@ -260,8 +260,7 @@ func Validate(root string) (*Loaded, []Issue) {
 		}
 	}
 
-	// Toolchain jobs; only worth running when the shape is sound enough to
-	// report per-item results.
+	// Toolchain jobs for every item whose shape was sound enough to run.
 	for _, is := range runJobs(jobs) {
 		c.add(is)
 	}
