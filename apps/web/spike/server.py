@@ -14,7 +14,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*a, directory=str(ROOT), **kw)
 
     def do_GET(self):
-        if self.path.startswith("/__fps"):
+        if self.path.startswith(("/__fps", "/__lab")):
             self.log_message("%s", self.path)
             self.send_response(204)
             self.end_headers()

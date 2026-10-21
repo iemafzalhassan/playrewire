@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>lab.wasm cold start</title>
+<pre id="out">running...</pre>
+<script type="module">
+  // Task 4 spike: time the first run of hello, including wasm fetch + compile,
+  // in a module worker that uses the same startLab() as the real worker.
+  const files = [{ name: "main.go", source: 'package main\nimport "fmt"\nfunc main() { fmt.Println("hi") }\n' }];
+  const t0 = performance.now();
+  const w = new Worker(new URL("/spike/lab-worker.js", location.href), { type: "module" });
+  const report = (o) => {
+    document.getElementById("out").textContent = JSON.stringify(o);
+    const q = new URLSearchParams(Object.entries(o).map(([k, v]) => [k, String(v)]));
+    q.set("ua", navigator.userAgent);
+    fetch("/__lab?" + q);
+  };
+  w.onerror = (e) => report({ error: e.message || "worker error" });
+  w.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "initError") return report({ error: m.message.slice(0, 300) });
+    if (m.type === "ready") {
+      const tReady = performance.now() - t0;
+      w.postMessage({ type: "run", id: 1, files });
+      w.tReady = tReady;
+    } else if (m.type === "result") {
+      const cold = performance.now() - t0;
+      const r = JSON.parse(m.resultJson);
+      report({ cold_ms: Math.round(cold), ready_ms: Math.round(w.tReady), stdout: JSON.stringify(r.stdout) });
+    }
+  };
+  w.postMessage({ type: "init", baseUrl: location.origin + "/public/lab/" });
+</script>

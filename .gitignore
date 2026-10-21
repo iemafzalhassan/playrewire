@@ -25,3 +25,4 @@ dist/
 
 # Generated wasm (just wasm)
 apps/web/public/world/
+apps/web/public/lab/
