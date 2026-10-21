@@ -23,8 +23,8 @@ hard wall-clock kill, at a download size and cold start we can ship?
 | --- | --- |
 | `lab.wasm` raw (`-trimpath -ldflags=-s`) | 40861701 bytes (40 MB) |
 | `lab.wasm` gzip -9 | 8713026 bytes (8.7 MB), limit 12 MB |
-| Cold start, Chromium (Playwright), 5 fresh contexts | 518 to 554 ms (median 527), limit 3000 ms |
-| Cold start, WebKitGTK MiniBrowser, fresh cache dir per run | 645 and 671 ms |
+| Cold start, Chromium (Playwright), 5 fresh contexts | 519 to 562 ms (5 runs, real `worker.ts`), limit 3000 ms |
+| Cold start, WebKitGTK MiniBrowser, fresh cache dir per run | 664 ms (1 sample, real `worker.ts`) |
 | Node worker_threads (Vitest) hello | about 350 ms |
 
 Cold start is page start to the first `hello` result: worker spawn, fetch of `wasm_exec.js` and
@@ -36,10 +36,23 @@ without the network is well under the 3 s limit; the network part is outside wha
 
 WebKit: Playwright WebKit does not run on Arch, so (ruling R10) WebKit numbers come from the
 WebKitGTK MiniBrowser (same engine as Tauri on Linux), reported by the page to the server log.
-Only two of three launches logged a result; treat the WebKit figure as indicative.
+The WebKit figure is a single sample; treat it as indicative.
+
+The spike page runs the real `webRunner.ts` and `worker.ts`, compiled by `apps/web/spike/build-spike.sh`
+(tsc, output in the git-ignored `apps/web/spike/.build/`). The earlier hand-copied `lab-worker.js` is gone.
 
 Reproduce: `just wasm-lab`; `python3 apps/web/spike/server.py 8767` then
-`node apps/web/spike/measure-lab.mjs`; `apps/web/spike/measure-lab-webkit.sh 3`.
+`node apps/web/spike/measure-lab.mjs http://127.0.0.1:8767/spike/lab.html 5` (it runs build-spike.sh);
+`apps/web/spike/measure-lab-webkit.sh 2`.
+
+## Real-worker browser check
+
+The page runs hello, then `for {}` with `wallMs: 1000`, then hello again, through the real worker.
+
+- Chromium (5 fresh contexts): hello prints `hi`; the loop is killed by `terminate()` at 1000 ms with
+  `timedOut: true`; hello after the kill prints `hi`.
+- WebKitGTK MiniBrowser (1 sample): hello prints `hi`; loop killed at 1001 ms with `timedOut: true`;
+  hello after the kill prints `hi`.
 
 ## Findings
 
@@ -56,8 +69,10 @@ Reproduce: `just wasm-lab`; `python3 apps/web/spike/server.py 8767` then
   no per-worker limit. In Node tests `resourceLimits` is set but only covers the JS heap, not wasm
   memory. The wall timer is the only guard against allocation loops. Worth a follow-up (an output/alloc
   guard in labcore or a periodic memory watchdog).
-- `wasm_exec.js` is evaluated from fetched text inside the worker (module workers have no
-  `importScripts`). A strict CSP would need to allow that; revisit in Task 13.
+- No eval on the browser path. `wasm_exec.js` is loaded by a dynamic `import()` in the module worker,
+  so a strict CSP needs only `script-src 'self'` and `'wasm-unsafe-eval'` (for WebAssembly
+  instantiation). The server must serve `wasm_exec.js` with a JavaScript MIME type, because `import()`
+  enforces it. Only the Node test worker uses `vm`. Fetches check `r.ok` and fail with `HTTP <status>`.
 
 ## Trimming
 
