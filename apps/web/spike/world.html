@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>World spike</title>
+  <style>
+    /* Paper behind a transparent canvas (Task 2 spike). */
+    html, body { margin: 0; height: 100%; }
+    body {
+      background-color: #f6f0e4;
+      /* Faint paper grain, pure CSS. */
+      background-image:
+        radial-gradient(rgba(42, 38, 32, 0.05) 1px, transparent 1px),
+        radial-gradient(rgba(42, 38, 32, 0.035) 1px, transparent 1px);
+      background-size: 7px 7px, 11px 11px;
+      background-position: 0 0, 3px 5px;
+    }
+    #world {
+      display: block;
+      width: 1280px;
+      height: 720px;
+      background: transparent;
+      outline: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="world" width="1280" height="720" aria-label="The PlayRewire street"></canvas>
+  <script type="module">
+    // Mirror the FPS log line to the static server as a request, so any engine
+    // (Playwright Chromium, WebKitGTK MiniBrowser) can be read from the server log.
+    for (const level of ["log", "info", "debug"]) {
+      const orig = console[level].bind(console);
+      console[level] = (...args) => {
+        const text = args.map(String).join(" ");
+        if (text.includes("rewire-world fps")) {
+          const m = text.match(/avg5s=([\d.]+) diag=([\d.]+)/);
+          if (m) fetch(`/__fps?avg5s=${m[1]}&diag=${m[2]}&ua=${encodeURIComponent(navigator.userAgent)}`).catch(() => {});
+        }
+        orig(...args);
+      };
+    }
+    // ?shot=N: N seconds in, copy the canvas (composited on the paper colour) and POST
+    // it to the spike server. Used for WebKitGTK, where no external screenshot tool is
+    // available. The WebGL buffer is only readable in the frame Bevy drew it, and frame
+    // callback order is not fixed, so grab 30 frames and keep the fullest (largest PNG).
+    const shotAt = Number(new URLSearchParams(location.search).get("shot"));
+    if (shotAt > 0) {
+      const src = document.getElementById("world");
+      const grab = () => new Promise((done) => requestAnimationFrame(() => {
+        const out = document.createElement("canvas");
+        out.width = src.width; out.height = src.height;
+        const ctx = out.getContext("2d");
+        ctx.fillStyle = "#f6f0e4";
+        ctx.fillRect(0, 0, out.width, out.height);
+        ctx.drawImage(src, 0, 0);
+        out.toBlob(done, "image/png");
+      }));
+      setTimeout(async () => {
+        let best = null;
+        for (let i = 0; i < 30; i++) {
+          const b = await grab();
+          if (!best || b.size > best.size) best = b;
+        }
+        fetch("/__shot", { method: "POST", body: best });
+      }, shotAt * 1000);
+    }
+    // Swallow winit's "control flow" exception that is used for the event loop.
+    import init from "../public/world/rewire_world.js";
+    init().catch((e) => {
+      if (!String(e).includes("Using exceptions for control flow")) console.error(e);
+    });
+  </script>
+</body>
+</html>

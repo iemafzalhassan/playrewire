@@ -1,0 +1,35 @@
+[package]
+name = "rewire-world"
+description = "The hand-inked PlayRewire street (Bevy, compiled to wasm)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# No audio, no gilrs/udev: `cargo test --workspace` must build on a bare host (R5).
+bevy = { version = "0.20.0", default-features = false, features = [
+    "std",
+    "async_executor",
+    "bevy_asset",
+    "bevy_log",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_mesh",
+    "bevy_shader",
+    "bevy_material",
+    "bevy_camera",
+    "bevy_color",
+    "webgl2",
+] }
+wasm-bindgen = "=0.2.129"
+
+# winit needs a windowing backend to compile natively; x11 is loaded at runtime (no build deps).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+bevy = { version = "0.20.0", default-features = false, features = ["x11"] }

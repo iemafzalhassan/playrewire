@@ -26,9 +26,14 @@ test-go:
 test-web:
     pnpm -r test
 
-# Build both wasm crates.
-wasm:
-    @echo "wasm: not built yet (Tasks 4 and 12)"
+# Build every wasm output into apps/web/public/ (git-ignored build outputs).
+# Later tasks add their own wasm-* recipe here (Task 4 lab.wasm, Task 12 core-wasm).
+wasm: wasm-world
+
+# Bevy street -> apps/web/public/world/ (rewire_world.js + rewire_world_bg.wasm).
+wasm-world:
+    CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo build -p rewire-world --target wasm32-unknown-unknown --release
+    wasm-bindgen --target web --out-dir apps/web/public/world target/wasm32-unknown-unknown/release/rewire_world.wasm
 
 # Validate content packs and emit the bundle.
 content:

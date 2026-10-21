@@ -22,3 +22,6 @@ node_modules/
 dist/
 .env
 .env.*
+
+# Generated wasm (just wasm)
+apps/web/public/world/
