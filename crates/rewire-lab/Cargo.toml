@@ -1,0 +1,18 @@
+[package]
+name = "rewire-lab"
+description = "Native Go runner for PlayRewire: the real Go toolchain inside a bubblewrap sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["process", "io-util", "time", "macros", "rt", "rt-multi-thread", "sync"] }
