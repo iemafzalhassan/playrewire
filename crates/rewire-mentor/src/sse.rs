@@ -7,15 +7,19 @@ pub struct SseEvent {
     pub data: String,
 }
 
+#[derive(Debug)]
+pub struct TooLarge;
+
 #[derive(Default)]
 pub struct SseParser {
+    pending: usize,
     buf: Vec<u8>,
     event: Option<String>,
     data: Vec<String>,
 }
 
 impl SseParser {
-    pub fn feed(&mut self, bytes: &[u8]) -> Vec<SseEvent> {
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<Vec<SseEvent>, TooLarge> {
         self.buf.extend_from_slice(bytes);
         let mut out = Vec::new();
         while let Some(pos) = self.buf.iter().position(|b| *b == b'\n' || *b == b'\r') {
@@ -33,7 +37,11 @@ impl SseParser {
                 out.push(ev);
             }
         }
-        out
+        // An unterminated line, or an event that never ends, must not grow without bound.
+        if self.buf.len() > crate::MAX_SSE_BUFFER || self.pending > crate::MAX_SSE_BUFFER {
+            return Err(TooLarge);
+        }
+        Ok(out)
     }
 
     /// Stream ended: dispatch a trailing event that lacked its blank line.
@@ -60,7 +68,10 @@ impl SseParser {
             None => (line, ""),
         };
         match field {
-            "data" => self.data.push(value.to_string()),
+            "data" => {
+                self.pending += value.len();
+                self.data.push(value.to_string());
+            }
             "event" => self.event = Some(value.to_string()),
             _ => {}
         }
@@ -69,6 +80,7 @@ impl SseParser {
 
     fn dispatch(&mut self) -> Option<SseEvent> {
         let event = self.event.take();
+        self.pending = 0;
         if self.data.is_empty() {
             return None;
         }
@@ -83,8 +95,8 @@ mod tests {
     #[test]
     fn handles_crlf_multiline_comments_and_split_chunks() {
         let mut p = SseParser::default();
-        let mut evs = p.feed(b": keep-alive\r\n\r\nevent: x\r\ndata: a\r\ndata: b\r");
-        evs.extend(p.feed(b"\n\r\ndata: [DONE]\n\n"));
+        let mut evs = p.feed(b": keep-alive\r\n\r\nevent: x\r\ndata: a\r\ndata: b\r").unwrap();
+        evs.extend(p.feed(b"\n\r\ndata: [DONE]\n\n").unwrap());
         assert_eq!(evs.len(), 2);
         assert_eq!(evs[0], SseEvent { event: Some("x".into()), data: "a\nb".into() });
         assert_eq!(evs[1].data, "[DONE]");
@@ -93,7 +105,7 @@ mod tests {
     #[test]
     fn finish_flushes_unterminated_event() {
         let mut p = SseParser::default();
-        assert!(p.feed(b"data: tail").is_empty());
+        assert!(p.feed(b"data: tail").unwrap().is_empty());
         assert_eq!(p.finish().unwrap().data, "tail");
     }
 }

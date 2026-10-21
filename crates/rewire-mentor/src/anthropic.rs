@@ -36,8 +36,7 @@ pub fn decode(data: &str) -> Result<Decoded, String> {
         }
         Some("message_stop") => Ok(Decoded::Done),
         Some("error") => {
-            let kind = v.pointer("/error/type").and_then(Value::as_str).unwrap_or("unknown");
-            Err(format!("provider error event: {kind}"))
+            Err(format!("provider error event: {}", crate::safe_code(v.pointer("/error/type"))))
         }
         _ => Ok(Decoded::Skip), // message_start, ping, content_block_start/stop, message_delta
     }

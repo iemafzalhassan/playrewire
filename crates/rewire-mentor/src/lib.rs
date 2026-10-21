@@ -41,8 +41,8 @@ pub enum MentorError {
     Timeout,
     #[error("the provider rejected the key (HTTP {0})")]
     Unauthorized(u16),
-    #[error("the provider answered HTTP {status}: {detail}")]
-    Http { status: u16, detail: String },
+    #[error("the provider answered HTTP {status}")]
+    Http { status: u16 },
     #[error("malformed reply stream: {0}")]
     Stream(String),
     #[error("keychain problem: {0}")]
@@ -60,7 +60,19 @@ fn uuid() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Remove the key from any text before it can reach an error.
+/// Hard caps so a hostile or broken server cannot flood memory within the time budget.
+pub(crate) const MAX_SSE_BUFFER: usize = 64 * 1024;
+pub(crate) const MAX_REPLY_BYTES: usize = 256 * 1024;
+
+/// Keep only a short provider error type/code made of safe characters; never free text.
+pub(crate) fn safe_code(v: Option<&serde_json::Value>) -> String {
+    match v.and_then(serde_json::Value::as_str) {
+        Some(c) if (1..=64).contains(&c.len()) && c.chars().all(|ch| ch.is_ascii_alphanumeric() || "_.-".contains(ch)) => c.to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+/// Remove the key from text (full string first, then truncate) before it reaches an error.
 fn redact(text: &str, key: Option<&str>) -> String {
     let t = match key.filter(|k| !k.is_empty()) {
         Some(k) => text.replace(k, "[redacted]"),
@@ -103,6 +115,7 @@ pub async fn hint_with_timeouts(
 
 #[derive(Default)]
 struct Progress {
+    total: usize,
     got_text: bool,
     finished: bool,
     done: bool,
@@ -156,8 +169,8 @@ async fn run(
         return Err(MentorError::Unauthorized(status.as_u16()));
     }
     if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(MentorError::Http { status: status.as_u16(), detail: redact(&text, key) });
+        // The body is never read or surfaced: it is provider text and could echo the key.
+        return Err(MentorError::Http { status: status.as_u16() });
     }
 
     let (thread_id, run_id, message_id) = (uuid(), uuid(), uuid());
@@ -178,6 +191,10 @@ async fn run(
         .map_err(|m| MentorError::Stream(redact(&m, key)))?;
         match decoded {
             Decoded::Delta(delta) => {
+                st.total += delta.len();
+                if st.total > MAX_REPLY_BYTES {
+                    return Err(MentorError::Stream("reply too large".into()));
+                }
                 st.got_text = true;
                 sink(AgUiEvent::TextMessageContent { message_id: message_id.clone(), delta });
             }
@@ -191,7 +208,8 @@ async fn run(
     while !st.done {
         let Some(chunk) = stream.next().await else { break };
         let chunk = chunk.map_err(|e| MentorError::Stream(redact(&e.without_url().to_string(), key)))?;
-        for ev in parser.feed(&chunk) {
+        let events = parser.feed(&chunk).map_err(|_| MentorError::Stream("stream line too large".into()))?;
+        for ev in events {
             handle(ev, &mut st, sink)?;
             if st.done {
                 break;
@@ -203,7 +221,7 @@ async fn run(
     {
         handle(ev, &mut st, sink)?;
     }
-    let Progress { got_text, finished, done } = st;
+    let Progress { got_text, finished, done, .. } = st;
 
     // Anthropic must say message_stop; OpenAI-style servers may just close after finish_reason.
     let complete = done || (kind == ApiKind::OpenAiCompatible && (finished || got_text));

@@ -255,7 +255,7 @@ async fn other_failures_emit_one_run_error() {
         then.status(500);
     });
     let (r, evs) = collect(&cfg("openai", server.url("/v1")), None).await;
-    assert!(matches!(r, Err(MentorError::Http { status: 500, .. })));
+    assert!(matches!(r, Err(MentorError::Http { status: 500 })));
     only_error(&evs, MSG_FALLBACK);
 
     // Malformed stream after RUN_STARTED: still exactly one RUN_ERROR, no RUN_FINISHED.
@@ -374,4 +374,68 @@ fn memory_key_store_returns_none_for_missing_entry() {
     s.set("openai", "k").unwrap();
     assert_eq!(s.get("openai").unwrap().as_deref(), Some("k"));
     assert_eq!(KEYRING_SERVICE, "dev.playrewire.rewire");
+}
+
+fn assert_no_key_fragment(text: &str, key: &str) {
+    let chars: Vec<char> = key.chars().collect();
+    for w in chars.windows(8) {
+        let frag: String = w.iter().collect();
+        assert!(!text.contains(&frag), "leaked fragment {frag:?} in {text}");
+    }
+}
+
+#[tokio::test]
+async fn openai_error_object_echoing_key_never_surfaces() {
+    let key = "sk-\"quoted\\key-0123456789abcdefghijklmnopqrstuvwxyz";
+    // Place the key across the old 200-char truncation boundary.
+    let msg = format!("{}{}", "x".repeat(170), key);
+    let chunk = serde_json::json!({"error": {"message": msg, "type": "invalid_request_error"}});
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(200).body(format!("data: {chunk}\n\n"));
+    });
+    let (r, evs) = collect(&cfg("openai", server.url("/v1")), Some(key)).await;
+    let e = r.unwrap_err();
+    let all = format!("{e} | {e:?} | {evs:?}");
+    assert_no_key_fragment(&all, key);
+    assert!(all.contains("invalid_request_error"), "{all}");
+
+    // Non-2xx body echoing the key across the same boundary.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(500).body(format!("{}{}", "y".repeat(170), key));
+    });
+    let (r, evs) = collect(&cfg("openai", server.url("/v1")), Some(key)).await;
+    let e = r.unwrap_err();
+    assert_no_key_fragment(&format!("{e} | {e:?} | {evs:?}"), key);
+}
+
+#[tokio::test]
+async fn sse_line_without_newline_is_capped() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(200).body(format!("data: {}", "a".repeat(200 * 1024)));
+    });
+    let (r, evs) = collect(&cfg("openai", server.url("/v1")), None).await;
+    assert!(matches!(r, Err(MentorError::Stream(_))));
+    only_error(&evs, MSG_FALLBACK);
+}
+
+#[tokio::test]
+async fn oversized_reply_is_capped() {
+    let one = format!(
+        "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{}\"}}}}]}}\n\n",
+        "z".repeat(32 * 1024)
+    );
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/chat/completions");
+        then.status(200).body(one.repeat(12)); // 384 KiB of text > 256 KiB
+    });
+    let (r, evs) = collect(&cfg("openai", server.url("/v1")), None).await;
+    assert!(matches!(r, Err(MentorError::Stream(_))));
+    only_error(&evs, MSG_FALLBACK);
 }

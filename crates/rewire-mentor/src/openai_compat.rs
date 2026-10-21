@@ -24,7 +24,7 @@ pub fn decode(data: &str) -> Result<Decoded, String> {
     }
     let v: Value = serde_json::from_str(data).map_err(|e| format!("bad stream chunk: {e}"))?;
     if let Some(err) = v.get("error") {
-        return Err(format!("provider error: {}", short(err)));
+        return Err(format!("provider error: {}", crate::safe_code(err.get("type").or_else(|| err.get("code")))));
     }
     let choice = v.pointer("/choices/0");
     if let Some(text) = choice.and_then(|c| c.pointer("/delta/content")).and_then(Value::as_str)
@@ -34,8 +34,4 @@ pub fn decode(data: &str) -> Result<Decoded, String> {
     }
     let finished = choice.and_then(|c| c.get("finish_reason")).is_some_and(|f| !f.is_null());
     Ok(if finished { Decoded::Finished } else { Decoded::Skip })
-}
-
-fn short(v: &Value) -> String {
-    v.to_string().chars().take(200).collect()
 }
