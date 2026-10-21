@@ -94,3 +94,11 @@ bigger packages such as `net/http` needs about 100 MB of `/tmp`.
 Where it is available, wrap bwrap in
 `systemd-run --user --scope -p MemoryMax=... -p TasksMax=...` to get memory and
 process-count limits from cgroups, and add a seccomp profile to bwrap.
+
+## Toolchain download
+
+`toolchain::install` fetches the pinned Go tarball from go.dev over TLS, checks
+its SHA-256 against the official listing, and only then extracts it. Extraction
+refuses absolute paths, `..`, links with absolute or `..` targets and unusual
+entry types, and installs by atomic rename. A failed install leaves nothing
+behind except `toolchains/`.
