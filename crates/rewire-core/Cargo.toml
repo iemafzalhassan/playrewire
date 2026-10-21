@@ -5,3 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# No `clock` feature: the core never reads the system clock. Dates arrive on StepRecord.
+chrono = { version = "0.4", default-features = false, features = ["std", "alloc", "serde"] }
+
+[dev-dependencies]
+serde_json = "1"
