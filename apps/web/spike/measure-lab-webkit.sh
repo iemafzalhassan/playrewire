@@ -6,6 +6,7 @@ set -euo pipefail
 runs="${1:-5}"; port=8768
 here="$(cd "$(dirname "$0")/.." && pwd)"
 log="$(mktemp)"
+"$here/spike/build-spike.sh"
 python3 "$here/spike/server.py" "$port" 2>"$log" & server=$!
 trap 'kill $server 2>/dev/null || true; rm -f "$log"' EXIT
 sleep 1

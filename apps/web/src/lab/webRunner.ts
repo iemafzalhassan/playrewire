@@ -8,12 +8,12 @@ const INIT_TIMEOUT_MS = 60_000;
 export type WorkerFactory = () => WorkerLike;
 
 /** Browser factory: a module Web Worker; wasm assets live under /lab/. */
-export function browserWorkerFactory(): WorkerLike {
-  const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+export function browserWorkerFactory(workerUrl?: string | URL, baseUrl?: string): WorkerLike {
+  const w = new Worker(workerUrl ?? new URL("./worker.ts", import.meta.url), { type: "module" });
   let failure: (m: string) => void = () => {};
   w.onerror = (e) => failure(e.message || "worker error");
   w.onmessageerror = () => failure("worker message error");
-  const base = new URL("/lab/", self.location.href).href;
+  const base = baseUrl ?? new URL("/lab/", self.location.href).href;
   return {
     postMessage: (m) => {
       w.postMessage(m);

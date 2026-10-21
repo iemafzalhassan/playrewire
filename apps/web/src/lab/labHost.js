@@ -1,10 +1,10 @@
 // Shared by the browser worker and the Node test worker: load lab.wasm once,
 // then answer { type: "run", id, files } messages. Plain JS so Node can run it
-// without a TS loader. `loadText(url)` / `loadBytes(url)` are environment hooks.
-export async function startLab({ baseUrl, loadText, loadBytes, post, onMessage }) {
+// without a TS loader. `loadRuntime(url)` / `loadBytes(url)` are environment hooks.
+export async function startLab({ baseUrl, loadRuntime, loadBytes, post, onMessage }) {
   try {
-    // wasm_exec.js is a plain script that defines globalThis.Go.
-    (0, eval)(await loadText(baseUrl + "wasm_exec.js"));
+    // loadRuntime(url) must make wasm_exec.js define globalThis.Go (no eval in browsers).
+    await loadRuntime(baseUrl + "wasm_exec.js");
     const go = new globalThis.Go();
     const bytes = await loadBytes(baseUrl + "lab.wasm");
     const { instance } = await WebAssembly.instantiate(bytes, go.importObject);

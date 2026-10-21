@@ -1,6 +1,8 @@
 // Task 4 spike: cold-start of the first hello in Playwright Chromium.
 // Usage: node spike/measure-lab.mjs <url> [runs]  (each run = fresh context, cold HTTP cache)
+import { execFileSync } from "node:child_process";
 import { chromium } from "playwright";
+execFileSync(new URL("./build-spike.sh", import.meta.url).pathname);
 const [url = "http://127.0.0.1:8767/spike/lab.html", runs = "5"] = process.argv.slice(2);
 const browser = await chromium.launch();
 const out = [];

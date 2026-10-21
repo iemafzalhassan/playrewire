@@ -26,3 +26,6 @@ dist/
 # Generated wasm (just wasm)
 apps/web/public/world/
 apps/web/public/lab/
+
+# spike build output
+apps/web/spike/.build/
