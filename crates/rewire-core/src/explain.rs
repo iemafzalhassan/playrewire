@@ -85,8 +85,39 @@ static TABLE: LazyLock<Vec<(Regex, Explain)>> = LazyLock::new(|| {
             r(r"index out of range \[(\d+)\] with length (\d+)"),
             index_card,
         ),
+        // Yaegi wording. Same titles as the rows above.
+        (r(r"cannot convert (\S+) to (\w+)"), |c| {
+            (
+                "Wrong type",
+                format!("You gave `{}` where Go expected a `{}`.", &c[1], &c[2]),
+            )
+        }),
+        (
+            r(r"expected '[^']*', found '([^']*)'|missing '[^']*' .*|expected .*"),
+            syntax_card,
+        ),
+        // Yaegi's panic has no numbers: `reflect: slice index out of range`.
+        (r(r"index out of range"), |_| {
+            (
+                "Off the end",
+                "You asked for an item past the end of the list. Items are numbered from 0."
+                    .to_string(),
+            )
+        }),
     ]
 });
+
+fn syntax_card(c: &Captures) -> (&'static str, String) {
+    let whole = c.get(0).map_or("", |m| m.as_str());
+    let tail = whole.split(" (and ").next().unwrap_or(whole);
+    let x = c.get(1).map_or(tail, |m| m.as_str());
+    (
+        "Something's out of place",
+        format!(
+            "Go got confused near `{x}`. Look for a missing `{{`, `}}` or `)` just before here."
+        ),
+    )
+}
 
 fn index_card(c: &Captures) -> (&'static str, String) {
     let plain = match c[2].parse::<u64>() {
@@ -191,10 +222,20 @@ pub fn explain_go_errors(
             Some(l) => (Some(l), c[2].parse().ok()),
             None => (None, None),
         };
-        let raw = c.get(0).unwrap().as_str();
+        let whole = c.get(0).unwrap();
+        let mut raw = whole.as_str();
+        let mut msg = c.get(3).unwrap().as_str();
+        // A Yaegi panic puts its reason on the next line.
+        if msg.starts_with("panic:")
+            && let Some(next) = stderr[whole.end()..].strip_prefix('\n')
+        {
+            let end = next.find('\n').unwrap_or(next.len());
+            raw = &stderr[whole.start()..whole.end() + 1 + end];
+            msg = raw;
+        }
         push_unique(
             &mut found,
-            match explain_message(&c[3]) {
+            match explain_message(msg) {
                 Some(x) => card(line, col, x, raw),
                 None => fallback(line, col, raw),
             },

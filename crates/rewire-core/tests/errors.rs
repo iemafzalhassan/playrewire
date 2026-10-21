@@ -175,19 +175,54 @@ fn unknown_falls_back_with_raw() {
 
 #[test]
 fn unmatched_positioned_line_gets_fallback_card() {
-    let out = explain_go_errors(&fx("yaegi_syntax.txt"), 0, false, false);
+    let out = explain_go_errors("6:18: something new\n", 0, false, false);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].title, "Go found a problem");
     assert_eq!(out[0].line, Some(6));
-    assert!(out[0].raw.starts_with("6:18: missing ','"));
 }
 
 #[test]
-fn yaegi_runtime_panic_falls_back() {
-    let out = explain_go_errors(&fx("yaegi_index.txt"), 0, false, false);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].title, "Go found a problem");
-    assert_eq!(out[0].line, Some(6));
+fn explains_index_out_of_range_yaegi() {
+    for f in ["yaegi_index.txt", "yaegi_index_var.txt"] {
+        let out = explain_go_errors(&fx(f), 0, false, false);
+        assert_eq!(out.len(), 1, "{f}");
+        assert_eq!(out[0].title, "Off the end");
+        assert_eq!(
+            out[0].plain,
+            "You asked for an item past the end of the list. Items are numbered from 0."
+        );
+        assert_eq!(out[0].line, Some(6));
+        assert!(out[0].raw.contains("reflect: slice index out of range"));
+    }
+    let off = explain_go_errors(&fx("yaegi_index.txt"), 4, false, false);
+    assert_eq!(off[0].line, Some(2));
+}
+
+#[test]
+fn explains_syntax_yaegi() {
+    let a = explain_go_errors(&fx("yaegi_syntax.txt"), 0, false, false);
+    assert_eq!(a.len(), 1);
+    assert_eq!(a[0].title, "Something's out of place");
+    assert_eq!(
+        a[0].plain,
+        "Go got confused near `missing ',' before newline in argument list`. Look for a missing `{`, `}` or `)` just before here."
+    );
+    assert_eq!(a[0].line, Some(6));
+    let b = explain_go_errors(&fx("yaegi_syntax_brace.txt"), 0, false, false);
+    assert_eq!(b[0].title, "Something's out of place");
+    assert!(b[0].plain.contains("near `EOF`"));
+    let c = explain_go_errors(&fx("yaegi_syntax_unexpected.txt"), 0, false, false);
+    assert!(c[0].plain.contains("near `)`"));
+}
+
+#[test]
+fn explains_wrong_type_yaegi() {
+    let out = explain_go_errors(&fx("yaegi_type.txt"), 0, false, false);
+    assert_eq!(out[0].title, "Wrong type");
+    assert_eq!(
+        out[0].plain,
+        "You gave `\"hello\"` where Go expected a `int`."
+    );
 }
 
 #[test]
