@@ -1,0 +1,8 @@
+id: cpu-ram-bus
+concept: cpu-ram-bus
+title: The road between CPU and RAM
+see:
+  scene: bus-road
+  caption: >-
+    The CPU and RAM talk over a road of tiny wires called a bus.
+    Data rides that road back and forth, billions of times every second.

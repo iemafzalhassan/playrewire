@@ -1,0 +1,201 @@
+id: functions
+concept: functions
+title: Little machines
+see:
+  scene: machine
+  caption: >-
+    A function is a little machine with a name.
+    You put something in, it does its job, and it can hand a result back.
+type:
+  ghost: |
+    package main
+
+    import "fmt"
+
+    func double(n int) int {
+        return n * 2
+    }
+
+    func main() {
+        fmt.Println(double(4))
+    }
+  whole_file: true
+  tips:
+    - match: func double(n int) int
+      text: func builds a machine called double. It takes an int called n and hands back an int.
+    - match: return
+      text: return hands the answer back to whoever used the machine.
+    - match: double(4)
+      text: Use the machine by its name. 4 goes in, and 8 comes out.
+drills:
+  - prompt: Write a function called hello that prints Hello! Use it once from main.
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func hello() {
+          fmt.Println("Hello!")
+      }
+
+      func main() {
+          hello()
+      }
+    expect_stdout: "Hello!\n"
+    whole_file: true
+  - prompt: Write a function called triple that takes a number and gives back 3 times it. Print triple(5).
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func triple(n int) int {
+          return n * 3
+      }
+
+      func main() {
+          fmt.Println(triple(5))
+      }
+    expect_stdout: "15\n"
+    whole_file: true
+  - prompt: Write a function called greet that takes a name and prints Hi and the name. Greet Ana, then Ben.
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func greet(name string) {
+          fmt.Println("Hi", name)
+      }
+
+      func main() {
+          greet("Ana")
+          greet("Ben")
+      }
+    expect_stdout: "Hi Ana\nHi Ben\n"
+    whole_file: true
+  - prompt: Write a function called add that takes two numbers and gives back their sum. Print add(2, 3).
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func add(a int, b int) int {
+          return a + b
+      }
+
+      func main() {
+          fmt.Println(add(2, 3))
+      }
+    expect_stdout: "5\n"
+    whole_file: true
+  - prompt: Write a function called bigger that gives back the larger of two numbers. Print bigger(7, 12).
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func bigger(a int, b int) int {
+          if a > b {
+              return a
+          }
+          return b
+      }
+
+      func main() {
+          fmt.Println(bigger(7, 12))
+      }
+    expect_stdout: "12\n"
+    whole_file: true
+  - prompt: Write a function called double. Use it in a loop to print the doubles of 0, 1, 2 and 3.
+    starter: |
+      package main
+
+      import "fmt"
+
+      func main() {
+      }
+    solution: |
+      package main
+
+      import "fmt"
+
+      func double(n int) int {
+          return n * 2
+      }
+
+      func main() {
+          for i := 0; i < 4; i++ {
+              fmt.Println(double(i))
+          }
+      }
+    expect_stdout: "0\n2\n4\n6\n"
+    whole_file: true
+hints:
+  - Write your function above main. It starts with func, then its name, then round brackets.
+  - Inputs go inside the brackets with their kind, like (n int). If the machine hands something back, write that kind after the brackets.
+  - Inside the machine, return sends the answer back. In main, use it by name, like fmt.Println(double(3)).
+fix_it:
+  broken: |
+    package main
+
+    import "fmt"
+
+    func double(n int) int {
+        return n * 2
+    }
+
+    func main() {
+        answer := double(4)
+        fmt.Println(double(5))
+    }
+  solution: |
+    package main
+
+    import "fmt"
+
+    func double(n int) int {
+        return n * 2
+    }
+
+    func main() {
+        answer := double(4)
+        fmt.Println(answer)
+    }
+  expect_stdout: "8\n"
+  whole_file: true

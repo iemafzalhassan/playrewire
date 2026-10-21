@@ -1,0 +1,42 @@
+id: green-wave
+concept: for-loop
+terminal: dock-st-traffic
+title: Turn Dock St green, one light every 2 seconds
+setup: |
+  package main
+
+  // Dock St has 5 traffic lights, numbered 0 to 4.
+levels:
+  fill_blank:
+    template: |
+      // Turn the Dock St lights green one after another, 2 seconds apart.
+      // SetGreen(i, seconds) turns light i green after that many seconds.
+      for i := 0; i < 5; i++ {
+          SetGreen(i, ___)
+      }
+    solution: |
+      for i := 0; i < 5; i++ {
+          SetGreen(i, i*2)
+      }
+  half_function:
+    template: |
+      // Turn the Dock St lights green one after another, 2 seconds apart.
+      // SetGreen(i, seconds) turns light i green after that many seconds.
+      // Wrap a loop around this line so lights 0 to 4 each get a turn.
+      SetGreen(i, i*2)
+    solution: |
+      for i := 0; i < 5; i++ {
+          SetGreen(i, i*2)
+      }
+  blank_with_hints:
+    template: ""
+    solution: |
+      for i := 0; i < 5; i++ {
+          SetGreen(i, i*2)
+      }
+expect_events:
+  - {op: green, i: 0, delay: 0}
+  - {op: green, i: 1, delay: 2}
+  - {op: green, i: 2, delay: 4}
+  - {op: green, i: 3, delay: 6}
+  - {op: green, i: 4, delay: 8}

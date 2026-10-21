@@ -1,0 +1,69 @@
+id: variables
+concept: variables
+title: Boxes with names
+see:
+  scene: labeled-boxes
+  caption: >-
+    A variable is a box with a name on it, and you can put a value inside.
+    Later you can look in the box, or swap what is inside.
+type:
+  ghost: |
+    name := "Mia"
+    lights := 5
+    lights = lights + 1
+    fmt.Println(name, "has", lights, "lights")
+  tips:
+    - match: name := "Mia"
+      text: := makes a new box called name and puts "Mia" in it. Text like this is called a string.
+    - match: lights := 5
+      text: This box holds a whole number. Go calls that an int.
+    - match: lights = lights + 1
+      text: A plain = changes a box you already made. Now lights holds 6.
+drills:
+  - prompt: Make a box called city that holds Dock St, then print it.
+    solution: |
+      city := "Dock St"
+      fmt.Println(city)
+    expect_stdout: "Dock St\n"
+  - prompt: Make a box called cars that holds the number 12, then print it.
+    solution: |
+      cars := 12
+      fmt.Println(cars)
+    expect_stdout: "12\n"
+  - prompt: 'Make a box called pet that holds cat. Use it to print: I have a cat'
+    solution: |
+      pet := "cat"
+      fmt.Println("I have a", pet)
+    expect_stdout: "I have a cat\n"
+  - prompt: Make a box called score that holds 10. Add 5 to it, then print it.
+    solution: |
+      score := 10
+      score = score + 5
+      fmt.Println(score)
+    expect_stdout: "15\n"
+  - prompt: Make a box called word that holds hi. Change it to bye, then print it.
+    solution: |
+      word := "hi"
+      word = "bye"
+      fmt.Println(word)
+    expect_stdout: "bye\n"
+  - prompt: Make a box a with 7 and a box b with 3, then print a plus b.
+    solution: |
+      a := 7
+      b := 3
+      fmt.Println(a + b)
+    expect_stdout: "10\n"
+hints:
+  - A new box needs a name, then :=, then the value to put inside.
+  - Text values need double quotes, numbers do not. To change a box you already made, use a plain =.
+  - The shape is name := value on one line, then fmt.Println(name) on the next.
+fix_it:
+  broken: |
+    // Should make a box called count that holds 3, then print it.
+    count = 3
+    fmt.Println(count)
+  solution: |
+    // Should make a box called count that holds 3, then print it.
+    count := 3
+    fmt.Println(count)
+  expect_stdout: "3\n"

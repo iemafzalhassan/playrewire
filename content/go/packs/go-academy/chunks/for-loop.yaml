@@ -1,0 +1,78 @@
+id: for-loop
+concept: for-loop
+title: Again and again
+see:
+  scene: lamp-street
+  caption: >-
+    A loop does the same job again and again, counting as it goes.
+    That way every lamp on the street gets its turn.
+type:
+  ghost: |
+    for i := 0; i < 5; i++ {
+        fmt.Println("Light", i, "waits", i*2, "seconds")
+    }
+  tips:
+    - match: i := 0; i < 5
+      text: Start i at 0, and keep going while i is less than 5. That is 0, 1, 2, 3 and 4.
+    - match: i++
+      text: After each round, i++ adds 1 to i.
+    - match: i*2
+      text: The * sign means times. i*2 is i doubled, so the waits are 0, 2, 4, 6 and 8.
+drills:
+  - prompt: Print the numbers 0 to 4, one per line.
+    solution: |
+      for i := 0; i < 5; i++ {
+          fmt.Println(i)
+      }
+    expect_stdout: "0\n1\n2\n3\n4\n"
+  - prompt: Print the word hello 3 times.
+    solution: |
+      for i := 0; i < 3; i++ {
+          fmt.Println("hello")
+      }
+    expect_stdout: "hello\nhello\nhello\n"
+  - prompt: Print the numbers 1 to 3, one per line.
+    solution: |
+      for i := 1; i < 4; i++ {
+          fmt.Println(i)
+      }
+    expect_stdout: "1\n2\n3\n"
+  - prompt: Print 0, 2, 4, 6 and 8, one per line. That is five counts, each one doubled.
+    solution: |
+      for i := 0; i < 5; i++ {
+          fmt.Println(i * 2)
+      }
+    expect_stdout: "0\n2\n4\n6\n8\n"
+  - prompt: Count from 0 to 5, but only print the numbers bigger than 2.
+    solution: |
+      for i := 0; i < 6; i++ {
+          if i > 2 {
+              fmt.Println(i)
+          }
+      }
+    expect_stdout: "3\n4\n5\n"
+  - prompt: Add up the numbers 1 to 5 and print the total.
+    solution: |
+      total := 0
+      for i := 1; i < 6; i++ {
+          total = total + i
+      }
+      fmt.Println(total)
+    expect_stdout: "15\n"
+hints:
+  - A loop starts with for, then three parts with semicolons between them.
+  - 'The three parts are: where to start (i := 0), when to stop (i < 5), and how to step (i++).'
+  - Put the work inside { }. Use i in there to get this round's count.
+fix_it:
+  broken: |
+    // Should print 1, 2, 3, 4 and 5.
+    for i := 1; i < 5; i++ {
+        fmt.Println(i)
+    }
+  solution: |
+    // Should print 1, 2, 3, 4 and 5.
+    for i := 1; i < 6; i++ {
+        fmt.Println(i)
+    }
+  expect_stdout: "1\n2\n3\n4\n5\n"
+mission: green-wave

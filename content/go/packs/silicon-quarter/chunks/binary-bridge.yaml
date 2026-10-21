@@ -1,0 +1,81 @@
+id: binary-bridge
+concept: reading-bits
+title: Reading bits one by one
+see:
+  scene: binary-lamps
+  caption: >-
+    Each lamp on the Binary Bridge is one bit.
+    Read the binary digits from left to right, and light a lamp for every 1.
+type:
+  ghost: |
+    bits := fmt.Sprintf("%08b", 13)
+    for i := 0; i < 8; i++ {
+        fmt.Println(i, bits[i] == '1')
+    }
+  tips:
+    - match: Sprintf
+      text: Sprintf makes the text but does not print it. Now bits holds "00001101".
+    - match: bits[i]
+      text: bits[i] picks one digit. bits[0] is the first one on the left.
+    - match: "'1'"
+      text: Single quotes mean one character. The == check gives true when that digit is a 1.
+drills:
+  - prompt: Make the 8-digit binary text for 5 in a box called bits, then print it.
+    solution: |
+      bits := fmt.Sprintf("%08b", 5)
+      fmt.Println(bits)
+    expect_stdout: "00000101\n"
+  - prompt: Make the binary text for 128. Print whether its first digit is a 1.
+    solution: |
+      bits := fmt.Sprintf("%08b", 128)
+      fmt.Println(bits[0] == '1')
+    expect_stdout: "true\n"
+  - prompt: Make the binary text for 2. Print whether its last digit, number 7, is a 1.
+    solution: |
+      bits := fmt.Sprintf("%08b", 2)
+      fmt.Println(bits[7] == '1')
+    expect_stdout: "false\n"
+  - prompt: For the number 6, print each position and whether its digit is a 1. The first line is 0 false.
+    solution: |
+      bits := fmt.Sprintf("%08b", 6)
+      for i := 0; i < 8; i++ {
+          fmt.Println(i, bits[i] == '1')
+      }
+    expect_stdout: "0 false\n1 false\n2 false\n3 false\n4 false\n5 true\n6 true\n7 false\n"
+  - prompt: For the number 9, print on or off for each of its 8 digits, one per line.
+    solution: |
+      bits := fmt.Sprintf("%08b", 9)
+      for i := 0; i < 8; i++ {
+          if bits[i] == '1' {
+              fmt.Println("on")
+          } else {
+              fmt.Println("off")
+          }
+      }
+    expect_stdout: "off\noff\noff\noff\non\noff\noff\non\n"
+  - prompt: Count how many 1s there are in the binary for 13, and print the count.
+    solution: |
+      bits := fmt.Sprintf("%08b", 13)
+      count := 0
+      for i := 0; i < 8; i++ {
+          if bits[i] == '1' {
+              count = count + 1
+          }
+      }
+      fmt.Println(count)
+    expect_stdout: "3\n"
+hints:
+  - First turn the number into binary text with fmt.Sprintf and the %08b pattern.
+  - bits[i] is one digit. Compare it with '1' in single quotes, not "1" in double quotes.
+  - Loop i from 0 while i < 8, and check bits[i] == '1' inside the loop.
+fix_it:
+  broken: |
+    bits := fmt.Sprintf("%08b", 13)
+    // Should print true: the last digit of 13 in binary is a 1.
+    fmt.Println(bits[7] == "1")
+  solution: |
+    bits := fmt.Sprintf("%08b", 13)
+    // Should print true: the last digit of 13 in binary is a 1.
+    fmt.Println(bits[7] == '1')
+  expect_stdout: "true\n"
+mission: binary-bridge

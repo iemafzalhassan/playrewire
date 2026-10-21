@@ -1,0 +1,60 @@
+id: hello-print
+concept: print
+title: Your first words
+see:
+  scene: print-say
+  caption: >-
+    A program is a list of steps the computer follows, top to bottom.
+    Println is the step that makes it say something on the screen.
+type:
+  ghost: |
+    fmt.Println("Hello, city!")
+    fmt.Println(3 + 4)
+    fmt.Println("Lights:", 5)
+  tips:
+    - match: fmt.Println
+      text: Println prints one line, then moves to the next. fmt is the toolbox it lives in.
+    - match: '"Hello, city!"'
+      text: Words go inside double quotes, so Go knows they are text.
+    - match: '"Lights:", 5'
+      text: A comma lets you print two things on one line. Numbers need no quotes.
+drills:
+  - prompt: Print the word hello.
+    solution: |
+      fmt.Println("hello")
+    expect_stdout: "hello\n"
+  - prompt: Print the number 42.
+    solution: |
+      fmt.Println(42)
+    expect_stdout: "42\n"
+  - prompt: Print Good on one line and morning on the line below it.
+    solution: |
+      fmt.Println("Good")
+      fmt.Println("morning")
+    expect_stdout: "Good\nmorning\n"
+  - prompt: Have Go work out 10 + 5 and print the answer.
+    solution: |
+      fmt.Println(10 + 5)
+    expect_stdout: "15\n"
+  - prompt: 'Print the text Cars: and the number 3 together on one line.'
+    solution: |
+      fmt.Println("Cars:", 3)
+    expect_stdout: "Cars: 3\n"
+  - prompt: Print three lines that say Ready, then Set, then Go!
+    solution: |
+      fmt.Println("Ready")
+      fmt.Println("Set")
+      fmt.Println("Go!")
+    expect_stdout: "Ready\nSet\nGo!\n"
+hints:
+  - Every line you print starts with fmt.Println and a pair of round brackets.
+  - Text needs double quotes around it. Numbers and sums do not.
+  - 'The shape is fmt.Println("your words"). A comma inside the brackets adds a second thing to the same line.'
+fix_it:
+  broken: |
+    fmt.Println("Good morning")
+    fmt.Println("Dock St is open!)
+  solution: |
+    fmt.Println("Good morning")
+    fmt.Println("Dock St is open!")
+  expect_stdout: "Good morning\nDock St is open!\n"

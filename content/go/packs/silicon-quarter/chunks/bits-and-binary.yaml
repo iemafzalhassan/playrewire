@@ -1,0 +1,64 @@
+id: bits-and-binary
+concept: binary
+title: Bits and binary
+see:
+  scene: binary-lamps
+  caption: >-
+    A computer stores everything as tiny switches called bits.
+    On is 1, off is 0, and a row of 8 bits can stand for a number.
+type:
+  ghost: |
+    n := 5
+    fmt.Printf("%08b\n", n)
+    fmt.Printf("%08b\n", 13)
+  tips:
+    - match: Printf
+      text: Printf prints using a pattern. The f stands for format.
+    - match: "%08b"
+      text: "%b shows a number in binary. 08 means: always use 8 digits, with zeros in front."
+    - match: '\n'
+      text: '\n starts a new line. Printf does not do that for you.'
+drills:
+  - prompt: Print the number 3 as 8 binary digits.
+    solution: |
+      fmt.Printf("%08b\n", 3)
+    expect_stdout: "00000011\n"
+  - prompt: Make a box called n that holds 8, then print n in binary.
+    solution: |
+      n := 8
+      fmt.Printf("%08b\n", n)
+    expect_stdout: "00001000\n"
+  - prompt: Print 255 in binary. It is the biggest number 8 bits can hold.
+    solution: |
+      fmt.Printf("%08b\n", 255)
+    expect_stdout: "11111111\n"
+  - prompt: Print 0 in binary, then 1 in binary on the next line.
+    solution: |
+      fmt.Printf("%08b\n", 0)
+      fmt.Printf("%08b\n", 1)
+    expect_stdout: "00000000\n00000001\n"
+  - prompt: Print 4, then 2, then 1 in binary, one per line. Watch the 1 move.
+    solution: |
+      fmt.Printf("%08b\n", 4)
+      fmt.Printf("%08b\n", 2)
+      fmt.Printf("%08b\n", 1)
+    expect_stdout: "00000100\n00000010\n00000001\n"
+  - prompt: Print 6 in binary. On the next line, print 6 + 1 in binary.
+    solution: |
+      fmt.Printf("%08b\n", 6)
+      fmt.Printf("%08b\n", 6+1)
+    expect_stdout: "00000110\n00000111\n"
+hints:
+  - Printf wants a pattern in quotes first, then a comma, then the number.
+  - 'The pattern %08b shows 8 binary digits. End the pattern with \n so the next print starts on a new line.'
+  - 'The shape is fmt.Printf("%08b\n", number), once for each number you want to see.'
+fix_it:
+  broken: |
+    // Should print 1 and 2 in binary, on two lines.
+    fmt.Printf("%08b", 1)
+    fmt.Printf("%08b\n", 2)
+  solution: |
+    // Should print 1 and 2 in binary, on two lines.
+    fmt.Printf("%08b\n", 1)
+    fmt.Printf("%08b\n", 2)
+  expect_stdout: "00000001\n00000010\n"

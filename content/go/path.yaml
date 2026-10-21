@@ -1,0 +1,11 @@
+# The interleaved learning order: foundations and Go take turns (spec §4.3).
+- {pack: silicon-quarter, chunk: what-is-a-computer}
+- {pack: go-academy, chunk: hello-print}
+- {pack: silicon-quarter, chunk: cpu-ram-bus}
+- {pack: go-academy, chunk: variables}
+- {pack: silicon-quarter, chunk: bits-and-binary}
+- {pack: go-academy, chunk: if-else}
+- {pack: go-academy, chunk: for-loop}
+- {pack: silicon-quarter, chunk: binary-bridge}
+- {pack: go-academy, chunk: slices}
+- {pack: go-academy, chunk: functions}

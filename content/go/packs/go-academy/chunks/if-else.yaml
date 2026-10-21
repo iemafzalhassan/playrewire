@@ -1,0 +1,97 @@
+id: if-else
+concept: if-else
+title: Picking a road
+see:
+  scene: fork-road
+  caption: >-
+    A program can choose which road to take.
+    If the answer to a question is yes, it goes one way, else it goes the other.
+type:
+  ghost: |
+    lights := 3
+    if lights > 2 {
+        fmt.Println("Bright street")
+    } else {
+        fmt.Println("Dark street")
+    }
+  tips:
+    - match: if lights > 2
+      text: if asks a question. Is lights bigger than 2? Other questions use < for smaller and == for equal.
+    - match: fmt.Println("Bright street")
+      text: The lines inside { } are one road. They run only when the answer is yes.
+    - match: '} else {'
+      text: else is the other road. It runs when the answer is no.
+drills:
+  - prompt: Make a box age that holds 20. If age is more than 17, print adult.
+    solution: |
+      age := 20
+      if age > 17 {
+          fmt.Println("adult")
+      }
+    expect_stdout: "adult\n"
+  - prompt: Make a box temp that holds 5. Print cold if temp is less than 10, otherwise print warm.
+    solution: |
+      temp := 5
+      if temp < 10 {
+          fmt.Println("cold")
+      } else {
+          fmt.Println("warm")
+      }
+    expect_stdout: "cold\n"
+  - prompt: Make a box score that holds 30. Print pass if score is more than 40, otherwise print try again.
+    solution: |
+      score := 30
+      if score > 40 {
+          fmt.Println("pass")
+      } else {
+          fmt.Println("try again")
+      }
+    expect_stdout: "try again\n"
+  - prompt: Make a box name that holds Sam. If name is Sam, print Hi Sam! Otherwise print Who are you?
+    solution: |
+      name := "Sam"
+      if name == "Sam" {
+          fmt.Println("Hi Sam!")
+      } else {
+          fmt.Println("Who are you?")
+      }
+    expect_stdout: "Hi Sam!\n"
+  - prompt: Make a box lamps that holds 0. If lamps is 0, print Dark. Otherwise print the number of lamps.
+    solution: |
+      lamps := 0
+      if lamps == 0 {
+          fmt.Println("Dark")
+      } else {
+          fmt.Println(lamps)
+      }
+    expect_stdout: "Dark\n"
+  - prompt: Make a box a with 4 and a box b with 9. Print whichever number is bigger.
+    solution: |
+      a := 4
+      b := 9
+      if a > b {
+          fmt.Println(a)
+      } else {
+          fmt.Println(b)
+      }
+    expect_stdout: "9\n"
+hints:
+  - Start with if, then a question like x > 3, then an opening {.
+  - Put what to do inside { }. Add } else { when you want a second road for the no answer.
+  - To check if two things are equal, use two equals signs, ==. A single = changes a box instead.
+fix_it:
+  broken: |
+    door := "open"
+    if door = "open" {
+        fmt.Println("Come in!")
+    } else {
+        fmt.Println("Knock first.")
+    }
+  solution: |
+    door := "open"
+    if door == "open" {
+        fmt.Println("Come in!")
+    } else {
+        fmt.Println("Knock first.")
+    }
+  expect_stdout: "Come in!\n"

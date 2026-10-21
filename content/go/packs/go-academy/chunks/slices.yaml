@@ -1,0 +1,73 @@
+id: slices
+concept: slices
+title: A train of values
+see:
+  scene: train-cars
+  caption: >-
+    A slice is a train of values, one car after another.
+    Each car has a number, and the first car is number 0.
+type:
+  ghost: |
+    cars := []string{"red", "blue", "green"}
+    fmt.Println(cars[0])
+    cars = append(cars, "gold")
+    fmt.Println(len(cars))
+  tips:
+    - match: '[]string{'
+      text: '[]string means a train of text values. []int would be a train of numbers.'
+    - match: cars[0]
+      text: cars[0] is the first car. Counting starts at 0, so cars[2] is the third.
+    - match: append
+      text: append adds a car to the end, and = saves the longer train. len tells you how many cars there are.
+drills:
+  - prompt: Make a slice of the numbers 4, 8 and 15, then print the whole slice.
+    solution: |
+      nums := []int{4, 8, 15}
+      fmt.Println(nums)
+    expect_stdout: "[4 8 15]\n"
+  - prompt: Make a slice of the pets cat, dog and fish. Print only the last one.
+    solution: |
+      pets := []string{"cat", "dog", "fish"}
+      fmt.Println(pets[2])
+    expect_stdout: "fish\n"
+  - prompt: Make a slice of the numbers 3, 1, 4, 1 and 5. Print how many numbers it holds.
+    solution: |
+      nums := []int{3, 1, 4, 1, 5}
+      fmt.Println(len(nums))
+    expect_stdout: "5\n"
+  - prompt: Make a slice of the colors red and blue. Add pink to the end, then print the slice.
+    solution: |
+      colors := []string{"red", "blue"}
+      colors = append(colors, "pink")
+      fmt.Println(colors)
+    expect_stdout: "[red blue pink]\n"
+  - prompt: Make a slice of the names Ana, Ben and Cy. Print each name on its own line.
+    solution: |
+      names := []string{"Ana", "Ben", "Cy"}
+      for i := 0; i < len(names); i++ {
+          fmt.Println(names[i])
+      }
+    expect_stdout: "Ana\nBen\nCy\n"
+  - prompt: Make a slice of the numbers 2, 4 and 6. Add them all up and print the total.
+    solution: |
+      nums := []int{2, 4, 6}
+      total := 0
+      for i := 0; i < len(nums); i++ {
+          total = total + nums[i]
+      }
+      fmt.Println(total)
+    expect_stdout: "12\n"
+hints:
+  - Make a slice with []string{...} or []int{...}, with commas between the values.
+  - Pick one value with name[number]. The first one is number 0, so the last is one less than the length.
+  - len(name) tells you how many values there are. append(name, value) makes a longer slice, so save it back with =.
+fix_it:
+  broken: |
+    // Should print the last stop: Park.
+    stops := []string{"Dock", "Bridge", "Park"}
+    fmt.Println(stops[len(stops)])
+  solution: |
+    // Should print the last stop: Park.
+    stops := []string{"Dock", "Bridge", "Park"}
+    fmt.Println(stops[len(stops)-1])
+  expect_stdout: "Park\n"
