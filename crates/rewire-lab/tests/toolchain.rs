@@ -3,10 +3,12 @@
 use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use httpmock::prelude::*;
 use rewire_lab::{
-    GO_VERSION, GoNativeRuntime, ToolchainError, ToolchainStatus, install, status_with_env,
+    GO_VERSION, GoNativeRuntime, Pinned, SHA256_LINUX_AMD64, SHA256_LINUX_ARM64, SIZE_LINUX_AMD64,
+    SIZE_LINUX_ARM64, ToolchainError, ToolchainStatus, install, install_with, status_with_env,
     warm_cache,
 };
 use sha2::{Digest, Sha256};
@@ -56,6 +58,10 @@ fn fake_tarball() -> Vec<u8> {
 
 /// Raw entry with an unvalidated name/link, which `tar::Builder` refuses to write.
 fn raw_entry(out: &mut Vec<u8>, name: &str, kind: u8, link: &str, data: &[u8]) {
+    raw_entry_mode(out, name, kind, link, data, 0o644);
+}
+
+fn raw_entry_mode(out: &mut Vec<u8>, name: &str, kind: u8, link: &str, data: &[u8], mode: u32) {
     let mut h = tar::Header::new_gnu();
     {
         let old = h.as_old_mut();
@@ -64,7 +70,7 @@ fn raw_entry(out: &mut Vec<u8>, name: &str, kind: u8, link: &str, data: &[u8]) {
     }
     h.set_entry_type(tar::EntryType::new(kind));
     h.set_size(data.len() as u64);
-    h.set_mode(0o644);
+    h.set_mode(mode);
     h.set_cksum();
     out.extend_from_slice(h.as_bytes());
     out.extend_from_slice(data);
@@ -76,34 +82,36 @@ fn finish_raw(mut out: Vec<u8>) -> Vec<u8> {
     gz(out)
 }
 
-fn listing(tarball: &[u8], claimed_sha: &str) -> String {
-    serde_json::json!([
-        {"version": "go1.26.0", "files": []},
-        {"version": GO_VERSION, "files": [
-            {"filename": format!("{GO_VERSION}.src.tar.gz"), "os": "", "arch": "", "sha256": "00", "size": 1, "kind": "source"},
-            {"filename": filename(), "os": "linux", "arch": arch(), "sha256": claimed_sha,
-             "size": tarball.len(), "kind": "archive"}
-        ]}
-    ])
-    .to_string()
+fn pinned(tarball: &[u8]) -> Pinned {
+    Pinned {
+        sha256: Box::leak(sha_hex(tarball).into_boxed_str()),
+        size: tarball.len() as u64,
+    }
 }
 
-fn serve(server: &MockServer, tarball: &[u8], claimed_sha: &str) {
-    let body = listing(tarball, claimed_sha);
-    server.mock(|when, then| {
-        when.method(GET)
-            .path("/")
-            .query_param("mode", "json")
-            .query_param("include", "all");
-        then.status(200)
-            .header("content-type", "application/json")
-            .body(body);
-    });
+fn wrong_pin(tarball: &[u8]) -> Pinned {
+    Pinned {
+        sha256: Box::leak("0".repeat(64).into_boxed_str()),
+        size: tarball.len() as u64,
+    }
+}
+
+async fn run_install(
+    data: &Path,
+    base: &str,
+    pin: Pinned,
+    on_progress: impl Fn(u64, u64),
+) -> Result<std::path::PathBuf, ToolchainError> {
+    install_with(data, base, pin, Duration::from_secs(30), on_progress).await
+}
+
+/// Serves the archive; returns the mock so tests can count requests.
+fn serve<'a>(server: &'a MockServer, tarball: &[u8]) -> httpmock::Mock<'a> {
     let tb = tarball.to_vec();
     server.mock(|when, then| {
         when.method(GET).path(format!("/{}", filename()));
         then.status(200).body(tb);
-    });
+    })
 }
 
 fn only_toolchains_dir(data: &Path) {
@@ -130,9 +138,9 @@ async fn status_missing_then_ready_after_install() {
 
     let tb = fake_tarball();
     let server = MockServer::start();
-    serve(&server, &tb, &sha_hex(&tb));
+    serve(&server, &tb);
 
-    let root = install(data.path(), &server.base_url(), |_, _| {})
+    let root = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
         .await
         .unwrap();
     assert_eq!(root, data.path().join("toolchains").join(GO_VERSION));
@@ -182,9 +190,9 @@ async fn checksum_mismatch_rejected_and_nothing_left_behind() {
     let data = tempfile::tempdir().unwrap();
     let tb = fake_tarball();
     let server = MockServer::start();
-    serve(&server, &tb, &"0".repeat(64));
+    serve(&server, &tb);
 
-    let err = install(data.path(), &server.base_url(), |_, _| {})
+    let err = run_install(data.path(), &server.base_url(), wrong_pin(&tb), |_, _| {})
         .await
         .unwrap_err();
     assert!(matches!(err, ToolchainError::ChecksumMismatch), "{err:?}");
@@ -212,10 +220,10 @@ async fn progress_reported() {
     let data = tempfile::tempdir().unwrap();
     let tb = fake_tarball();
     let server = MockServer::start();
-    serve(&server, &tb, &sha_hex(&tb));
+    serve(&server, &tb);
 
     let calls = Mutex::new(Vec::<(u64, u64)>::new());
-    install(data.path(), &server.base_url(), |d, t| {
+    run_install(data.path(), &server.base_url(), pinned(&tb), |d, t| {
         calls.lock().unwrap().push((d, t))
     })
     .await
@@ -234,22 +242,6 @@ async fn progress_reported() {
 }
 
 #[tokio::test]
-async fn missing_listing_entry_is_unsupported() {
-    let data = tempfile::tempdir().unwrap();
-    let server = MockServer::start();
-    server.mock(|when, then| {
-        when.method(GET).path("/").query_param("mode", "json");
-        then.status(200)
-            .body(r#"[{"version":"go1.26.0","files":[]}]"#);
-    });
-    let err = install(data.path(), &server.base_url(), |_, _| {})
-        .await
-        .unwrap_err();
-    assert!(matches!(err, ToolchainError::Unsupported(_)), "{err:?}");
-    assert!(toolchains_entries(data.path()).is_empty());
-}
-
-#[tokio::test]
 async fn half_finished_target_without_marker_is_replaced() {
     let data = tempfile::tempdir().unwrap();
     let stale = data.path().join("toolchains").join(GO_VERSION);
@@ -258,8 +250,8 @@ async fn half_finished_target_without_marker_is_replaced() {
 
     let tb = fake_tarball();
     let server = MockServer::start();
-    serve(&server, &tb, &sha_hex(&tb));
-    let root = install(data.path(), &server.base_url(), |_, _| {})
+    serve(&server, &tb);
+    let root = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
         .await
         .unwrap();
     assert!(!root.join("junk").exists());
@@ -273,9 +265,9 @@ async fn assert_malicious_rejected(entries: impl FnOnce(&mut Vec<u8>)) {
     entries(&mut raw);
     let tb = finish_raw(raw);
     let server = MockServer::start();
-    serve(&server, &tb, &sha_hex(&tb)); // checksum is right: the archive itself is hostile
+    serve(&server, &tb); // checksum is right: the archive itself is hostile
 
-    let err = install(data.path(), &server.base_url(), |_, _| {})
+    let err = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
         .await
         .unwrap_err();
     assert!(
@@ -330,6 +322,155 @@ async fn tar_slip_write_through_symlink_rejected() {
 #[tokio::test]
 async fn archive_without_go_dir_rejected() {
     assert_malicious_rejected(|r| raw_entry(r, "other/file", b'0', "", b"x")).await;
+}
+
+#[tokio::test]
+async fn second_install_is_noop_and_keeps_toolchain() {
+    let data = tempfile::tempdir().unwrap();
+    let tb = fake_tarball();
+    let server = MockServer::start();
+    let archive = serve(&server, &tb);
+    let root = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
+        .await
+        .unwrap();
+    std::fs::write(root.join("sentinel"), "keep").unwrap();
+
+    let again = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(again, root);
+    assert_eq!(
+        std::fs::read_to_string(root.join("sentinel")).unwrap(),
+        "keep"
+    );
+    assert_eq!(archive.calls(), 1, "second install must not download");
+}
+
+#[tokio::test]
+async fn concurrent_installs_both_succeed() {
+    let data = tempfile::tempdir().unwrap();
+    let tb = fake_tarball();
+    let server = MockServer::start();
+    let archive = serve(&server, &tb);
+    let url = server.base_url();
+    let (a, b) = tokio::join!(
+        run_install(data.path(), &url, pinned(&tb), |_, _| {}),
+        run_install(data.path(), &url, pinned(&tb), |_, _| {}),
+    );
+    assert_eq!(a.unwrap(), b.unwrap());
+    assert_eq!(archive.calls(), 1);
+    assert_eq!(
+        toolchains_entries(data.path()),
+        vec![GO_VERSION.to_string()]
+    );
+}
+
+#[tokio::test]
+async fn stale_temp_entries_are_swept() {
+    let data = tempfile::tempdir().unwrap();
+    let t = data.path().join("toolchains");
+    std::fs::create_dir_all(t.join(".tmp-old/go")).unwrap();
+    std::fs::write(t.join(".dl-old"), "x").unwrap();
+    let tb = fake_tarball();
+    let server = MockServer::start();
+    serve(&server, &tb);
+    run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        toolchains_entries(data.path()),
+        vec![GO_VERSION.to_string()]
+    );
+}
+
+#[tokio::test]
+async fn stalled_server_maps_to_offline() {
+    let data = tempfile::tempdir().unwrap();
+    let tb = fake_tarball();
+    let server = MockServer::start();
+    let body = tb.clone();
+    server.mock(|when, then| {
+        when.method(GET).path(format!("/{}", filename()));
+        then.status(200).delay(Duration::from_secs(3)).body(body);
+    });
+    let started = std::time::Instant::now();
+    let err = install_with(
+        data.path(),
+        &server.base_url(),
+        pinned(&tb),
+        Duration::from_millis(300),
+        |_, _| {},
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, ToolchainError::Offline), "{err:?}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(toolchains_entries(data.path()).is_empty());
+}
+
+#[test]
+fn pinned_constants_match_reviewed_values() {
+    assert_eq!(
+        SHA256_LINUX_AMD64,
+        "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5"
+    );
+    assert_eq!(SIZE_LINUX_AMD64, 70_590_635);
+    assert_eq!(
+        SHA256_LINUX_ARM64,
+        "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8"
+    );
+    assert_eq!(SIZE_LINUX_ARM64, 67_076_180);
+    assert_eq!(GO_VERSION, "go1.27.2");
+}
+
+#[tokio::test]
+async fn non_https_non_loopback_base_url_rejected() {
+    let data = tempfile::tempdir().unwrap();
+    for url in ["http://go.dev/dl", "http://example.com", "ftp://go.dev/dl"] {
+        let err = install(data.path(), url, |_, _| {}).await.unwrap_err();
+        assert!(
+            matches!(err, ToolchainError::Unsupported(_)),
+            "{url}: {err:?}"
+        );
+    }
+    assert!(!data.path().join("toolchains").exists());
+}
+
+#[tokio::test]
+async fn redirect_to_other_host_rejected() {
+    let data = tempfile::tempdir().unwrap();
+    let tb = fake_tarball();
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path(format!("/{}", filename()));
+        then.status(302)
+            .header("location", "http://localhost:1/evil.tar.gz");
+    });
+    let err = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
+        .await
+        .unwrap_err();
+    assert!(!matches!(err, ToolchainError::ChecksumMismatch), "{err:?}");
+    assert!(toolchains_entries(data.path()).is_empty());
+}
+
+#[tokio::test]
+async fn setuid_bits_are_dropped() {
+    use std::os::unix::fs::PermissionsExt;
+    let data = tempfile::tempdir().unwrap();
+    let mut raw = Vec::new();
+    raw_entry_mode(&mut raw, "go/bin/go", b'0', "", b"#!/bin/sh\n", 0o6755);
+    let tb = finish_raw(raw);
+    let server = MockServer::start();
+    serve(&server, &tb);
+    let root = run_install(data.path(), &server.base_url(), pinned(&tb), |_, _| {})
+        .await
+        .unwrap();
+    let mode = std::fs::metadata(root.join("bin/go"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o7000, 0, "{mode:o}");
+    assert_eq!(mode & 0o777, 0o755);
 }
 
 /// Reuses the system Go (its GOROOT is a static official toolchain).

@@ -10,7 +10,6 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::go_native::GoNativeRuntime;
@@ -112,21 +111,6 @@ fn archive_name() -> Result<String, ToolchainError> {
     Ok(format!("{GO_VERSION}.linux-{arch}.tar.gz"))
 }
 
-#[derive(Deserialize)]
-struct Release {
-    #[serde(default)]
-    files: Vec<ReleaseFile>,
-}
-
-#[derive(Deserialize)]
-struct ReleaseFile {
-    filename: String,
-    #[serde(default)]
-    sha256: String,
-    #[serde(default)]
-    size: u64,
-}
-
 fn map_net(e: reqwest::Error) -> ToolchainError {
     // Connect, DNS, timeouts and mid-body failures all mean "can't get it now".
     if e.is_connect() || e.is_timeout() || e.is_request() || e.is_body() || e.is_decode() {
@@ -149,45 +133,131 @@ fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, ToolchainE
     }
 }
 
+/// The expected archive: lowercase hex SHA-256 and byte size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pinned {
+    pub sha256: &'static str,
+    pub size: u64,
+}
+
+/// SHA-256 and size of `go1.27.2.linux-amd64.tar.gz` (checked against go.dev
+/// and dl.google.com). Pinned in the binary so a compromised mirror can't
+/// vouch for its own archive.
+pub const SHA256_LINUX_AMD64: &str =
+    "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5";
+pub const SIZE_LINUX_AMD64: u64 = 70_590_635;
+/// Same for `go1.27.2.linux-arm64.tar.gz`.
+pub const SHA256_LINUX_ARM64: &str =
+    "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8";
+pub const SIZE_LINUX_ARM64: u64 = 67_076_180;
+
+fn pinned_for_host() -> Result<Pinned, ToolchainError> {
+    archive_name()?;
+    Ok(match std::env::consts::ARCH {
+        "x86_64" => Pinned {
+            sha256: SHA256_LINUX_AMD64,
+            size: SIZE_LINUX_AMD64,
+        },
+        _ => Pinned {
+            sha256: SHA256_LINUX_ARM64,
+            size: SIZE_LINUX_ARM64,
+        },
+    })
+}
+
+/// Hosts a production download may be redirected to.
+const REDIRECT_HOSTS: [&str; 2] = ["go.dev", "dl.google.com"];
+
+/// Serializes installs within the process (double clicks, retries).
+static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+fn is_loopback(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
+}
+
+/// `https` only, except loopback (used by tests). Returns the host.
+fn validate_base(base: &str) -> Result<(String, bool), ToolchainError> {
+    let url = reqwest::Url::parse(base)
+        .map_err(|e| ToolchainError::Unsupported(format!("bad download URL: {e}")))?;
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let loopback = is_loopback(&host);
+    match url.scheme() {
+        "https" => Ok((host, false)),
+        "http" if loopback => Ok((host, true)),
+        _ => Err(ToolchainError::Unsupported(
+            "the download URL must use https".into(),
+        )),
+    }
+}
+
 /// Downloads, verifies and installs the pinned toolchain. Returns its root.
-/// On any failure nothing is left behind except `toolchains/` itself.
+/// On any failure nothing is left behind except `toolchains/` itself. An
+/// already-installed toolchain is returned as is, without any download.
 pub async fn install(
     data_dir: &Path,
     base_url: &str,
     on_progress: impl Fn(u64, u64),
 ) -> Result<PathBuf, ToolchainError> {
+    install_with(
+        data_dir,
+        base_url,
+        pinned_for_host()?,
+        STALL_TIMEOUT,
+        on_progress,
+    )
+    .await
+}
+
+/// [`install`] with the expected archive and stall limit passed in. Only for
+/// tests; production always goes through [`install`] and the pinned values.
+#[doc(hidden)]
+pub async fn install_with(
+    data_dir: &Path,
+    base_url: &str,
+    pinned: Pinned,
+    stall: Duration,
+    on_progress: impl Fn(u64, u64),
+) -> Result<PathBuf, ToolchainError> {
     let name = archive_name()?;
+    let (base_host, base_is_loopback) = validate_base(base_url)?;
     let base = base_url.trim_end_matches('/');
+
+    let _guard = INSTALL_LOCK.lock().await;
+    let toolchains = toolchains_dir(data_dir);
+    std::fs::create_dir_all(&toolchains)?;
+    sweep_stale(&toolchains);
+    let target = managed_root(data_dir);
+    if target.join(MARKER).is_file() {
+        return Ok(target);
+    }
+
+    let policy = reqwest::redirect::Policy::custom(move |attempt| {
+        if attempt.previous().len() >= 5 {
+            return attempt.error("too many redirects");
+        }
+        let host = attempt.url().host_str().unwrap_or("").to_ascii_lowercase();
+        let ok = if base_is_loopback {
+            host == base_host
+        } else {
+            attempt.url().scheme() == "https" && REDIRECT_HOSTS.contains(&host.as_str())
+        };
+        if ok {
+            attempt.follow()
+        } else {
+            attempt.error("redirect to a host that is not allowed")
+        }
+    });
     let client = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(stall)
+        .redirect(policy)
         .build()
         .map_err(|e| ToolchainError::Io(io::Error::other(e)))?;
 
-    // 1. Expected checksum from the official listing.
-    let releases: Vec<Release> = check_status(
-        client
-            .get(format!("{base}/?mode=json&include=all"))
-            .send()
-            .await
-            .map_err(map_net)?,
-    )?
-    .json()
-    .await
-    .map_err(map_net)?;
-    let entry = releases
-        .into_iter()
-        .flat_map(|r| r.files)
-        .find(|f| f.filename == name)
-        .ok_or_else(|| ToolchainError::Unsupported(format!("{name} is not in the Go listing")))?;
-    let expected = entry.sha256.to_ascii_lowercase();
-
-    // 2. Stream to a temp file next to the final location, hashing as we go.
-    let toolchains = toolchains_dir(data_dir);
-    std::fs::create_dir_all(&toolchains)?;
+    // Stream to a temp file next to the final location, hashing as we go.
     let mut download = tempfile::Builder::new()
         .prefix(".dl-")
         .tempfile_in(&toolchains)?;
-
     let resp = check_status(
         client
             .get(format!("{base}/{name}"))
@@ -195,16 +265,12 @@ pub async fn install(
             .await
             .map_err(map_net)?,
     )?;
-    let total = if entry.size > 0 {
-        entry.size
-    } else {
-        resp.content_length().unwrap_or(0)
-    };
+    let total = pinned.size;
     let mut hasher = Sha256::new();
     let mut done = 0u64;
     let mut stream = resp.bytes_stream();
     loop {
-        let next = tokio::time::timeout(STALL_TIMEOUT, stream.next())
+        let next = tokio::time::timeout(stall, stream.next())
             .await
             .map_err(|_| ToolchainError::Offline)?;
         let Some(chunk) = next else { break };
@@ -216,18 +282,15 @@ pub async fn install(
     }
     download.flush()?;
 
-    // 3. Verify.
     let actual: String = hasher
         .finalize()
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    if actual != expected {
+    if actual != pinned.sha256.to_ascii_lowercase() {
         return Err(ToolchainError::ChecksumMismatch); // temp file removed on drop
     }
 
-    // 4. Extract into a temp dir, mark, and rename into place.
-    let target = managed_root(data_dir);
     let archive_path = download.path().to_path_buf();
     let toolchains2 = toolchains.clone();
     let target2 = target.clone();
@@ -236,6 +299,46 @@ pub async fn install(
         .map_err(|e| ToolchainError::Io(io::Error::other(e)))??;
     drop(download);
     Ok(target)
+}
+
+/// Removes leftovers of crashed installs. Called with the install lock held.
+fn sweep_stale(toolchains: &Path) {
+    let Ok(rd) = std::fs::read_dir(toolchains) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let n = e.file_name();
+        let n = n.to_string_lossy();
+        if n.starts_with(".dl-") || n.starts_with(".tmp-") {
+            let p = e.path();
+            let _ = if p.is_dir() {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+        }
+    }
+}
+
+/// Drops setuid/setgid/sticky bits from everything under `dir`.
+fn mask_modes(dir: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for e in std::fs::read_dir(dir)? {
+        let e = e?;
+        let ft = e.file_type()?;
+        if ft.is_symlink() {
+            continue;
+        }
+        let meta = e.metadata()?;
+        let mode = meta.permissions().mode();
+        if mode & !0o777 & 0o7777 != 0 {
+            std::fs::set_permissions(e.path(), std::fs::Permissions::from_mode(mode & 0o777))?;
+        }
+        if ft.is_dir() {
+            mask_modes(&e.path())?;
+        }
+    }
+    Ok(())
 }
 
 fn extract_and_place(
@@ -254,9 +357,12 @@ fn extract_and_place(
             "archive has no go/bin/go".into(),
         ));
     }
+    mask_modes(&staged)?;
     std::fs::write(staged.join(MARKER), GO_VERSION)?;
-    // A target without a marker is a half-finished earlier attempt. (A target
-    // with one means a concurrent or earlier success; replace it too.)
+    if target.join(MARKER).is_file() {
+        return Ok(()); // a Ready toolchain is never replaced
+    }
+    // Without a marker the target is a half-finished earlier attempt.
     if target.exists() {
         std::fs::remove_dir_all(target)?;
     }
