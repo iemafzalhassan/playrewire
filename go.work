@@ -1,3 +1,6 @@
 go 1.27.2
 
-use ./lab-wasm
+use (
+	./lab-wasm
+	./tools/packcheck
+)

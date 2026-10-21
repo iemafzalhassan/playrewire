@@ -1,0 +1,6 @@
+id: hello
+concept: program
+title: Your first program
+see:
+  scene: street-intro
+  caption: A program is a list of steps the computer follows.

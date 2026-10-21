@@ -1,0 +1,42 @@
+id: print
+concept: print
+title: Printing a line
+see:
+  scene: street-sign
+  caption: Println shows a line of text.
+type:
+  ghost: |
+    fmt.Println("hello")
+  tips:
+    - match: Println
+      text: Println prints a line, then moves to the next one.
+drills:
+  - prompt: Print the word hi.
+    starter: fmt.Println()
+    solution: fmt.Println("hi")
+    expect_stdout: "hi\n"
+  - prompt: Print the number 42.
+    solution: fmt.Println(42)
+    expect_stdout: "42\n"
+  - prompt: Print two lines, a then b.
+    solution: |
+      fmt.Println("a")
+      fmt.Println("b")
+    expect_stdout: "a\nb\n"
+  - prompt: Print 1 and 2 on one line.
+    solution: fmt.Println(1, 2)
+    expect_stdout: "1 2\n"
+  - prompt: Print the sum of 2 and 3.
+    solution: fmt.Println(2 + 3)
+    expect_stdout: "5\n"
+hints:
+  - Use fmt.Println.
+  - Put text inside double quotes.
+  - 'The shape is fmt.Println("text").'
+fix_it:
+  broken: |
+    fmt.Println("oops)
+  solution: |
+    fmt.Println("oops")
+  expect_stdout: "oops\n"
+mission: lights1

@@ -45,9 +45,14 @@ wasm-lab:
     cd lab-wasm && GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o ../apps/web/public/lab/lab.wasm ./cmd/lab
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" apps/web/public/lab/wasm_exec.js
 
-# Validate content packs and emit the bundle.
+# Validate content packs (running every solution), then emit the bundle.
 content:
-    @echo "content: not built yet (Task 5)"
+    go run ./tools/packcheck validate content/go
+    go run ./tools/packcheck build content/go -o apps/web/public/content/go.json
+
+# Regenerate tools/packcheck/testdata/good.bundle.json (read by the Vitest schema test).
+packcheck-fixture:
+    cd tools/packcheck && UPDATE_BUNDLE=1 go test -count=1 -run TestGoodBundleIsNotStale ./...
 
 dev-web:
     @echo "dev-web: not built yet (Task 13)"

@@ -27,5 +27,8 @@ dist/
 apps/web/public/world/
 apps/web/public/lab/
 
+# Built lesson bundle (just content)
+apps/web/public/content/
+
 # spike build output
 apps/web/spike/.build/

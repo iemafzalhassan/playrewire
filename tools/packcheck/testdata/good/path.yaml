@@ -1,0 +1,3 @@
+- {pack: basics, chunk: hello}
+- {pack: basics, chunk: print}
+- {pack: basics, chunk: funcs}

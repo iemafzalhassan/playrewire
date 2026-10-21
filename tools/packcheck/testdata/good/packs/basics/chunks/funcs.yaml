@@ -1,0 +1,48 @@
+id: funcs
+concept: functions
+title: Functions
+see:
+  scene: street-shop
+  caption: A function is a named set of steps.
+type:
+  ghost: |
+    package main
+
+    import "fmt"
+
+    func greet() {
+        fmt.Println("hi")
+    }
+
+    func main() {
+        greet()
+    }
+  whole_file: true
+drills:
+  - prompt: Define greet and call it.
+    solution: |
+      package main
+
+      import "fmt"
+
+      func greet() { fmt.Println("hi") }
+
+      func main() { greet() }
+    expect_stdout: "hi\n"
+    whole_file: true
+  - prompt: Print 1.
+    solution: fmt.Println(1)
+    expect_stdout: "1\n"
+  - prompt: Print 2.
+    solution: fmt.Println(2)
+    expect_stdout: "2\n"
+  - prompt: Print 3.
+    solution: fmt.Println(3)
+    expect_stdout: "3\n"
+  - prompt: Print 4.
+    solution: fmt.Println(4)
+    expect_stdout: "4\n"
+hints:
+  - Think about the name.
+  - A function starts with func.
+  - Call it with its name and ().

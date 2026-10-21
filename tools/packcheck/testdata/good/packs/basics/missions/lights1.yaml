@@ -1,0 +1,30 @@
+id: lights1
+concept: print
+terminal: corner
+title: Turn on the lamp
+setup: |
+  package main
+
+  const lampCount = 3
+levels:
+  fill_blank:
+    template: |
+      Lamp(0, ___)
+      Say("on")
+    solution: |
+      Lamp(0, true)
+      Say("on")
+  half_function:
+    template: |
+      Lamp(0, true)
+    solution: |
+      Lamp(0, true)
+      Say("on")
+  blank_with_hints:
+    template: ""
+    solution: |
+      Lamp(0, true)
+      Say("on")
+expect_events:
+  - {op: lamp, i: 0, on: true}
+  - {op: say, text: "on"}

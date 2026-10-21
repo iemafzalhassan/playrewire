@@ -1,0 +1,210 @@
+{
+  "version": 1,
+  "language": "go",
+  "wrapperLineOffset": 7,
+  "cityStub": "package main\n\nimport \"fmt\"\n\n// jsonString quotes s as a JSON string using only fmt (no encoding/json,\n// strconv or strings), so this file stays inside the lab's allow-list and\n// also compiles under gc.\nfunc jsonString(s string) string {\n\tout := \"\\\"\"\n\tfor _, r := range s {\n\t\tswitch {\n\t\tcase r == '\"':\n\t\t\tout += \"\\\\\\\"\"\n\t\tcase r == '\\\\':\n\t\t\tout += \"\\\\\\\\\"\n\t\tcase r == '\\n':\n\t\t\tout += \"\\\\n\"\n\t\tcase r == '\\r':\n\t\t\tout += \"\\\\r\"\n\t\tcase r == '\\t':\n\t\t\tout += \"\\\\t\"\n\t\tcase r < 0x20:\n\t\t\tout += fmt.Sprintf(\"\\\\u%04x\", r)\n\t\tdefault:\n\t\t\tout += string(r)\n\t\t}\n\t}\n\treturn out + \"\\\"\"\n}\n\n// SetGreen schedules light i to turn green after delaySec seconds.\nfunc SetGreen(i, delaySec int) {\n\tfmt.Printf(\"@city {\\\"op\\\":\\\"green\\\",\\\"i\\\":%d,\\\"delay\\\":%d}\\n\", i, delaySec)\n}\n\n// Lamp turns lamp i on or off.\nfunc Lamp(i int, on bool) {\n\tfmt.Printf(\"@city {\\\"op\\\":\\\"lamp\\\",\\\"i\\\":%d,\\\"on\\\":%t}\\n\", i, on)\n}\n\n// Say shows msg in the city's speech bubble.\nfunc Say(msg string) {\n\tfmt.Printf(\"@city {\\\"op\\\":\\\"say\\\",\\\"text\\\":%s}\\n\", jsonString(msg))\n}\n",
+  "path": [
+    {
+      "pack": "basics",
+      "chunk": "hello"
+    },
+    {
+      "pack": "basics",
+      "chunk": "print"
+    },
+    {
+      "pack": "basics",
+      "chunk": "funcs"
+    }
+  ],
+  "packs": [
+    {
+      "id": "basics",
+      "title": "Basics",
+      "district": "Downtown",
+      "chunks": [
+        {
+          "id": "funcs",
+          "concept": "functions",
+          "title": "Functions",
+          "see": {
+            "scene": "street-shop",
+            "caption": "A function is a named set of steps."
+          },
+          "type": {
+            "ghost": "package main\n\nimport \"fmt\"\n\nfunc greet() {\n    fmt.Println(\"hi\")\n}\n\nfunc main() {\n    greet()\n}\n",
+            "tips": [],
+            "wholeFile": true
+          },
+          "drills": [
+            {
+              "prompt": "Define greet and call it.",
+              "solution": "package main\n\nimport \"fmt\"\n\nfunc greet() { fmt.Println(\"hi\") }\n\nfunc main() { greet() }\n",
+              "expectStdout": "hi\n",
+              "wholeFile": true
+            },
+            {
+              "prompt": "Print 1.",
+              "solution": "fmt.Println(1)",
+              "expectStdout": "1\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print 2.",
+              "solution": "fmt.Println(2)",
+              "expectStdout": "2\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print 3.",
+              "solution": "fmt.Println(3)",
+              "expectStdout": "3\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print 4.",
+              "solution": "fmt.Println(4)",
+              "expectStdout": "4\n",
+              "wholeFile": false
+            }
+          ],
+          "hints": [
+            "Think about the name.",
+            "A function starts with func.",
+            "Call it with its name and ()."
+          ],
+          "pack": "basics",
+          "steps": [
+            "see",
+            "type",
+            "drill"
+          ]
+        },
+        {
+          "id": "hello",
+          "concept": "program",
+          "title": "Your first program",
+          "see": {
+            "scene": "street-intro",
+            "caption": "A program is a list of steps the computer follows."
+          },
+          "drills": [],
+          "hints": [],
+          "pack": "basics",
+          "steps": [
+            "see"
+          ]
+        },
+        {
+          "id": "print",
+          "concept": "print",
+          "title": "Printing a line",
+          "see": {
+            "scene": "street-sign",
+            "caption": "Println shows a line of text."
+          },
+          "type": {
+            "ghost": "fmt.Println(\"hello\")\n",
+            "tips": [
+              {
+                "match": "Println",
+                "text": "Println prints a line, then moves to the next one."
+              }
+            ],
+            "wholeFile": false
+          },
+          "drills": [
+            {
+              "prompt": "Print the word hi.",
+              "starter": "fmt.Println()",
+              "solution": "fmt.Println(\"hi\")",
+              "expectStdout": "hi\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print the number 42.",
+              "solution": "fmt.Println(42)",
+              "expectStdout": "42\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print two lines, a then b.",
+              "solution": "fmt.Println(\"a\")\nfmt.Println(\"b\")\n",
+              "expectStdout": "a\nb\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print 1 and 2 on one line.",
+              "solution": "fmt.Println(1, 2)",
+              "expectStdout": "1 2\n",
+              "wholeFile": false
+            },
+            {
+              "prompt": "Print the sum of 2 and 3.",
+              "solution": "fmt.Println(2 + 3)",
+              "expectStdout": "5\n",
+              "wholeFile": false
+            }
+          ],
+          "hints": [
+            "Use fmt.Println.",
+            "Put text inside double quotes.",
+            "The shape is fmt.Println(\"text\")."
+          ],
+          "fixIt": {
+            "broken": "fmt.Println(\"oops)\n",
+            "solution": "fmt.Println(\"oops\")\n",
+            "expectStdout": "oops\n",
+            "wholeFile": false
+          },
+          "mission": "lights1",
+          "pack": "basics",
+          "steps": [
+            "see",
+            "type",
+            "drill",
+            "use"
+          ]
+        }
+      ],
+      "missions": [
+        {
+          "id": "lights1",
+          "concept": "print",
+          "terminal": "corner",
+          "title": "Turn on the lamp",
+          "setup": "package main\n\nconst lampCount = 3\n",
+          "levels": {
+            "fillBlank": {
+              "template": "Lamp(0, ___)\nSay(\"on\")\n",
+              "solution": "Lamp(0, true)\nSay(\"on\")\n",
+              "wholeFile": false
+            },
+            "halfFunction": {
+              "template": "Lamp(0, true)\n",
+              "solution": "Lamp(0, true)\nSay(\"on\")\n",
+              "wholeFile": false
+            },
+            "blankWithHints": {
+              "template": "",
+              "solution": "Lamp(0, true)\nSay(\"on\")\n",
+              "wholeFile": false
+            }
+          },
+          "expectEvents": [
+            {
+              "i": 0,
+              "on": true,
+              "op": "lamp"
+            },
+            {
+              "op": "say",
+              "text": "on"
+            }
+          ],
+          "pack": "basics"
+        }
+      ]
+    }
+  ]
+}

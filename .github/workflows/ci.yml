@@ -38,4 +38,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: just test
 
-  # content job: added in Task 5 (runs `just content`).
+  content:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+      # Task 8: switch to content/go
+      - run: go run ./tools/packcheck validate tools/packcheck/testdata/good
