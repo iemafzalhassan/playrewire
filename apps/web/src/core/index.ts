@@ -71,14 +71,16 @@ let ready = false;
  */
 export async function initCore(): Promise<void> {
   if (ready) return;
-  const isNode =
-    typeof process !== "undefined" && !!process.versions?.node && typeof window === "undefined";
+  // Ask Node directly: a DOM test environment (jsdom) defines `window` but
+  // still runs in Node, where fetch() of a file URL does not work.
+  const isNode = typeof process !== "undefined" && !!process.versions?.node;
   if (isNode) {
     const spec = "node:fs"; // variable specifier keeps bundlers from pulling it into the web build
     const { readFileSync } = (await import(/* @vite-ignore */ spec)) as typeof import("node:fs");
-    wasm.initSync({
-      module: readFileSync(new URL("./pkg/rewire_core_wasm_bg.wasm", import.meta.url)),
-    });
+    // Not a literal `new URL("...", import.meta.url)`: Vite rewrites that
+    // pattern to an http URL under a DOM test environment.
+    const file = "./pkg/rewire_core_wasm_bg.wasm";
+    wasm.initSync({ module: readFileSync(new URL(file, import.meta.url)) });
   } else {
     await initWasm();
   }

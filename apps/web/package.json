@@ -3,15 +3,35 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --passWithNoTests"
+    "tokens": "node scripts/tokens.ts",
+    "predev": "node scripts/tokens.ts",
+    "dev": "vite",
+    "prebuild": "node scripts/tokens.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "pretest": "node scripts/tokens.ts",
+    "test": "vitest run --passWithNoTests",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "e2e": "node e2e/prod-check.mjs"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@testing-library/svelte": "^5.4.2",
     "@types/node": "^26.6.5",
+    "jsdom": "^30.1.2",
     "playwright": "1.63.0",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
     "typescript": "^5.9.0",
+    "vite": "^7.3.7",
     "vitest": "^3.2.0"
   },
   "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/opendyslexic": "^5.3.0",
+    "@tauri-apps/api": "2.12.4",
     "zod": "^4.6.7"
   }
 }

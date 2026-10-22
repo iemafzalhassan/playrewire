@@ -59,11 +59,26 @@ content:
 packcheck-fixture:
     cd tools/packcheck && UPDATE_BUNDLE=1 go test -count=1 -run TestGoodBundleIsNotStale ./...
 
-dev-web:
-    @echo "dev-web: not built yet (Task 13)"
+# Build the web prerequisites that are missing (lab.wasm, core wasm, lesson bundle).
+web-prereqs:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -f apps/web/public/lab/lab.wasm ] && [ -f apps/web/public/lab/wasm_exec.js ] || just wasm-lab
+    [ -f apps/web/src/core/pkg/rewire_core_wasm_bg.wasm ] || just wasm-core
+    [ -f apps/web/public/content/go.json ] || just content
+
+# Vite dev server for the web app (http://localhost:5173).
+dev-web: web-prereqs
+    cd apps/web && pnpm dev
+
+# `just e2e-web --shots` also refreshes the review screenshots in docs/design/.
+# Production-build checks in Chromium: worker + wasm under the CSP, Home and Map.
+e2e-web *args: web-prereqs
+    cd apps/web && pnpm e2e {{args}}
 
 dev-desktop:
     @echo "dev-desktop: not built yet (Task 15)"
 
-bundle:
-    @echo "bundle: not built yet (Task 15)"
+# Static web build -> apps/web/dist (desktop packaging comes with Task 15/18).
+bundle: web-prereqs
+    cd apps/web && pnpm build

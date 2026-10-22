@@ -20,6 +20,7 @@ coverage.*
 # Node / web
 node_modules/
 dist/
+dist-e2e/
 .env
 .env.*
 

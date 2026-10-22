@@ -1,6 +1,7 @@
 // TypeScript mirror of the bundle that tools/packcheck emits
 // (apps/web/public/content/go.json). Keep in step with
 // tools/packcheck/schema.go; the Vitest test parses a real packcheck bundle.
+import '../zod-config';
 import { z } from 'zod';
 
 export const StepSchema = z.enum(['see', 'type', 'drill', 'use']);

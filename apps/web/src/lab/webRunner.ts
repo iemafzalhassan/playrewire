@@ -9,7 +9,13 @@ export type WorkerFactory = () => WorkerLike;
 
 /** Browser factory: a module Web Worker; wasm assets live under /lab/. */
 export function browserWorkerFactory(workerUrl?: string | URL, baseUrl?: string): WorkerLike {
-  const w = new Worker(workerUrl ?? new URL("./worker.ts", import.meta.url), { type: "module" });
+  // Keep the default as the literal `new Worker(new URL(...), {type})` form:
+  // that is the only shape Vite recognizes and bundles as a worker chunk.
+  // Anything else (e.g. `workerUrl ?? new URL(...)`) ships worker.ts raw as a
+  // data: URL, which is untranspiled and blocked by worker-src 'self'.
+  const w = workerUrl
+    ? new Worker(workerUrl, { type: "module" })
+    : new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   let failure: (m: string) => void = () => {};
   w.onerror = (e) => failure(e.message || "worker error");
   w.onmessageerror = () => failure("worker message error");

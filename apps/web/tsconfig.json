@@ -9,7 +9,8 @@
     "skipLibCheck": true,
     "noEmit": true,
     "isolatedModules": true,
-    "types": ["node"]
+    "verbatimModuleSyntax": true,
+    "types": ["node", "svelte", "vite/client"]
   },
-  "include": ["src"]
+  "include": ["src", "scripts", "vite.config.ts"]
 }
