@@ -88,6 +88,8 @@
     running = true;
     const slowTimer = setTimeout(() => (slow = true), 900);
     const d = drill;
+    // The run belongs to this drill round; if the learner moves on meanwhile, its answer is dropped.
+    const token = round;
     const source = code;
     const hintsAtRun = hintsShown;
     const { source: file, lineOffset } = wrapMain(source, d.wholeFile);
@@ -100,6 +102,7 @@
     clearTimeout(slowTimer);
     slow = false;
     running = false;
+    if (token !== round || finished) return;
 
     const trouble = labTrouble(r.stderr);
     const errors = trouble
@@ -124,6 +127,13 @@
       }
     }
 
+    // A lab that failed to start says nothing about the learner: no first-try
+    // verdict, no reset of their run of passes.
+    if (trouble) {
+      await tick();
+      resultEl?.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
     if (firstRun === null) firstRun = ok && hintsAtRun === 0;
     if (ok) {
       passes++;
@@ -199,7 +209,7 @@
         {hintsShown >= hints.length ? "no more hints" : `hint (${hints.length - hintsShown} left)`}
       </InkButton>
       {#if missesHere >= 2 && drills.length > 1}
-        <button type="button" class="other" onclick={nextDrill}>try a different one</button>
+        <button type="button" class="other" onclick={nextDrill} disabled={running}>try a different one</button>
       {/if}
     {/if}
   </div>
@@ -335,8 +345,12 @@
     text-underline-offset: 4px;
     cursor: pointer;
   }
-  .other:hover {
+  .other:hover:not(:disabled) {
     color: var(--ink);
+  }
+  .other:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
   .kbd-tip,
   .slow {

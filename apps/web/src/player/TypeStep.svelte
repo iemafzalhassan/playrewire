@@ -1,7 +1,8 @@
-<!-- Type: the learner types over a faint ghost of the code. Keys are caught on
-     a focused region (no text field), so there is nothing to paste into, and
-     paste, drop and the context menu are cancelled with a gentle note. Keys
-     stay in memory as the ghost state; nothing is stored or sent. -->
+<!-- Type: the learner types over a faint ghost of the code. Keys arrive in a
+     visually hidden, focused <input> (so phone keyboards appear) whose value is
+     cleared after every key. Paste, drop, autocorrect replacements, the context
+     menu and middle-click paste are cancelled with a gentle note. Keys stay in
+     memory as the ghost state; nothing is stored or sent. -->
 <script lang="ts">
   import { onMount } from "svelte";
   import type { TypeStep } from "../content/types";
@@ -27,7 +28,11 @@
   let mistakes = $state(0);
   let focused = $state(false);
   let pasteHint = $state(false);
-  let area: HTMLDivElement;
+  let field: HTMLInputElement;
+  /** The key the last keydown applied: its echo as beforeinput/input is skipped. */
+  let echo: string | null = null;
+  /** Set when beforeinput already took this key; a stray input event after it is only cleared. */
+  let tookBefore = false;
 
   const lines = $derived.by(() => {
     let start = 0;
@@ -71,9 +76,60 @@
     pasteHint = true;
   }
 
+  function apply(k: string) {
+    if (s.done) return;
+    const before = s.errorAt;
+    s = ghostKey(ghost, s, k);
+    if (before === null && s.errorAt !== null) mistakes++;
+  }
+
+  /** Text from the input path (phone keyboards, IMEs), unless it echoes a keydown already applied. */
+  function applyText(text: string) {
+    for (const ch of text) {
+      if (echo !== null && ch === echo) {
+        echo = null;
+        continue;
+      }
+      echo = null;
+      apply(ch === "\n" ? "Enter" : ch === "\t" ? "Tab" : ch);
+    }
+  }
+
+  const PASTES = new Set(["insertFromPaste", "insertFromPasteAsQuotation", "insertFromDrop", "insertReplacementText", "insertFromYank"]);
+
+  function onBeforeInput(e: InputEvent) {
+    tookBefore = false;
+    if (PASTES.has(e.inputType)) return stop(e);
+    if (e.inputType === "insertText" || e.inputType === "insertLineBreak" || e.inputType === "insertParagraph" || e.inputType === "deleteContentBackward") {
+      e.preventDefault();
+      if (e.inputType === "deleteContentBackward") {
+        if (echo === "Backspace") echo = null;
+        else apply("Backspace");
+      } else if (e.inputType === "insertText") applyText(e.data ?? "");
+      else if (echo === "Enter") echo = null;
+      else apply("Enter");
+      tookBefore = true;
+    }
+    // Anything else (IME composition) lands in the value and is read on input.
+  }
+
+  function onInput() {
+    const v = field.value;
+    field.value = "";
+    if (v && !tookBefore) applyText(v); // applyText skips a keydown's echo
+    tookBefore = false;
+  }
+
+  /** Linux pastes the selection on middle-click into a real input. */
+  function noMiddle(e: MouseEvent) {
+    if (e.button === 1) stop(e);
+  }
+
   function onKey(e: KeyboardEvent) {
+    echo = null;
+    tookBefore = false;
     if (e.key === "Escape") {
-      area.blur();
+      field.blur();
       return;
     }
     if (e.isComposing) return;
@@ -87,15 +143,15 @@
     if (s.done) return;
     const k = e.key;
     if (k === "Enter" || k === "Backspace" || k === "Tab" || [...k].length === 1) {
+      // Prevented here, so browsers send no input event; `echo` covers any that still do.
       e.preventDefault();
-      const before = s.errorAt;
-      s = ghostKey(ghost, s, k);
-      if (before === null && s.errorAt !== null) mistakes++;
+      apply(k);
+      echo = k;
     }
   }
 
   onMount(() => {
-    if (autofocus) area.focus();
+    if (autofocus) field.focus();
   });
 </script>
 
@@ -103,23 +159,41 @@
   <p class="lead">Type over the faint code. Your fingers learn it by doing.</p>
 
   <Card edge="a" tilt={-0.3} class="sheet">
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions (the input inside takes the keys) -->
     <div
       class="ghost"
-      bind:this={area}
-      role="textbox"
-      tabindex="0"
-      aria-multiline="true"
-      aria-label="Type the code"
-      aria-describedby="type-help type-now"
-      onkeydown={onKey}
-      onpaste={stop}
+      class:focused
+      onclick={() => field.focus()}
       ondrop={stop}
       ondragover={(e) => e.preventDefault()}
-      oncontextmenu={stop}
-      onbeforeinput={stop}
-      onfocus={() => (focused = true)}
-      onblur={() => (focused = false)}
+      onmousedown={noMiddle}
+      onmouseup={noMiddle}
+      onauxclick={noMiddle}
     >
+      <input
+        bind:this={field}
+        class="keys"
+        type="text"
+        aria-label="Type the code"
+        aria-describedby="type-help type-now"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        inputmode="text"
+        enterkeyhint="enter"
+        onkeydown={onKey}
+        onbeforeinput={onBeforeInput}
+        oninput={onInput}
+        onpaste={stop}
+        ondrop={stop}
+        oncontextmenu={stop}
+        onmousedown={noMiddle}
+        onmouseup={noMiddle}
+        onauxclick={noMiddle}
+        onfocus={() => (focused = true)}
+        onblur={() => (focused = false)}
+      />
       <div class="code" aria-hidden="true">
         {#each lines as line, li}
           <div class="line">
@@ -206,8 +280,26 @@
     cursor: text;
     border-radius: var(--radius-wobble-a);
   }
-  .ghost:focus-visible {
+  /* The ring the hidden input would draw goes on the sheet instead. */
+  .ghost.focused {
+    outline: 3px solid var(--focus);
     outline-offset: -6px;
+  }
+  .keys {
+    position: absolute;
+    left: var(--space-4);
+    top: var(--space-4);
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    /* 16px keeps iOS from zooming in on focus. */
+    font-size: 16px;
+    color: transparent;
+    caret-color: transparent;
+    background: transparent;
+    pointer-events: none;
   }
   .code {
     font-family: var(--font-code);
@@ -234,10 +326,10 @@
     border-radius: 2px;
     box-shadow: inset 0 -3px 0 var(--accent);
   }
-  .ghost:not(:focus) .cur {
+  .ghost:not(.focused) .cur {
     background: none;
   }
-  .ghost:focus .cur {
+  .ghost.focused .cur {
     animation: blink 1.1s steps(1) infinite;
   }
   .bad {

@@ -107,4 +107,51 @@ describe("DrillStep", () => {
     await fireEvent.click(runBtn());
     await waitFor(() => expect(onDone).toHaveBeenCalledWith({ hintsUsed: 2, firstTry: true }));
   });
+
+  it("switching drills mid-run discards the old result", async () => {
+    let release: (r: RawRunResult) => void = () => {};
+    const results: (RawRunResult | Promise<RawRunResult>)[] = [
+      bad("8:1: undefined: y\n"),
+      bad("8:1: undefined: y\n"),
+      new Promise<RawRunResult>((r) => (release = r)),
+    ];
+    const run = vi.fn(async () => results.shift() ?? ok(""));
+    const onDone = vi.fn();
+    render(DrillStep, { props: { drills, hints, run, onDone } });
+    await fireEvent.click(runBtn());
+    await screen.findByText("Unknown name");
+    await fireEvent.click(runBtn());
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    const other = await screen.findByRole("button", { name: /try a different one/i });
+
+    await fireEvent.click(runBtn()); // this run hangs
+    await waitFor(() => expect(other).toHaveProperty("disabled", true));
+    // a click that slipped in before the button was disabled still switches drills
+    other.removeAttribute("disabled");
+    await fireEvent.click(other);
+    expect(screen.getByText("Print 2.")).toBeTruthy();
+
+    release(ok("1\n")); // drill 1's answer arrives late
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByTestId("drill-result").textContent).not.toContain("✓");
+    expect(screen.getByTestId("passes").textContent).toMatch(/0 of 3/);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("a lab that fails to start does not cost the first try", async () => {
+    const { onDone } = setup([
+      { ...bad("could not start the code runner: Error: worker error\n") },
+      ok("1\n"),
+      ok("2\n"),
+      ok("3\n"),
+    ]);
+    await fireEvent.click(runBtn());
+    expect(await screen.findByText("The Go lab didn't start")).toBeTruthy();
+    for (let i = 0; i < 2; i++) {
+      await fireEvent.click(runBtn());
+      await fireEvent.click(await screen.findByRole("button", { name: /next drill/i }));
+    }
+    await fireEvent.click(runBtn());
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith({ hintsUsed: 0, firstTry: true }));
+  });
 });

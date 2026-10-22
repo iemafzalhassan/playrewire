@@ -105,12 +105,27 @@ try {
   await page.getByRole("button", { name: /next: type/i }).click();
   const area = page.getByRole("textbox", { name: /type the code/i });
   await area.waitFor();
+  // The keys go to a hidden, focused <input> (so phones get a keyboard); paste must still be refused.
   const pasted = await area.evaluate((el) => {
-    const e = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: new DataTransfer() });
-    el.dispatchEvent(e);
-    return e.defaultPrevented;
+    const clip = new DataTransfer();
+    clip.setData("text/plain", "fmt.Println");
+    const paste = new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: clip });
+    el.dispatchEvent(paste);
+    const before = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertFromPaste", data: "fmt" });
+    el.dispatchEvent(before);
+    return {
+      tag: el.tagName,
+      focused: document.activeElement === el,
+      cancelled: paste.defaultPrevented && before.defaultPrevented,
+      value: el.value,
+      typed: document.querySelectorAll(".c.done").length,
+    };
   });
-  check(pasted && (await page.getByText("Type it out, it's how your fingers learn.").isVisible()), "player: paste is cancelled with the hint");
+  check(
+    pasted.tag === "INPUT" && pasted.focused && pasted.cancelled && pasted.value === "" && pasted.typed === 0 &&
+      (await page.getByText("Type it out, it's how your fingers learn.").isVisible()),
+    `player: paste into the focused input is cancelled with the hint ${JSON.stringify(pasted)}`,
+  );
   await typeGhost(page, firstCoding.type.ghost);
   await page.getByRole("button", { name: /next: drill/i }).click();
   for (let i = 0; i < 3; i++) {
@@ -164,8 +179,8 @@ try {
     await shot("settings", "#/settings", { width: 1200, height: 860 }, progress);
 
     // The chunk player (reduced motion, so scenes show their final frame).
-    const play = async (name, seed, act, viewport = { width: 1200, height: 860 }) => {
-      const c = await browser.newContext({ viewport, deviceScaleFactor: 1, reducedMotion: "reduce" });
+    const play = async (name, seed, act, viewport = { width: 1200, height: 860 }, extra = {}) => {
+      const c = await browser.newContext({ viewport, deviceScaleFactor: 1, reducedMotion: "reduce", ...extra });
       await c.addInitScript((p) => localStorage.setItem("rewire.progress.v1", JSON.stringify(p)), seed);
       const p = await c.newPage();
       await p.goto(`${base}/#/learn/go-academy/variables`);
@@ -199,12 +214,17 @@ try {
       await solveDrill(p, false, 110); // typed at a learner's pace, so the round's speed is real
       await p.waitForTimeout(3200); // let the xp float clear
     });
+    // A phone: touch, mobile viewport; the hidden input holds focus so the keyboard would be up.
     await play("type-step-phone", at("see"), async (p) => {
-      await p.getByRole("textbox", { name: /type the code/i }).waitFor();
+      const keys = p.getByRole("textbox", { name: /type the code/i });
+      await keys.waitFor();
+      await p.locator(".ghost").tap();
       await p.keyboard.type('name := "Mia"');
       await p.keyboard.press("Enter");
       await p.keyboard.type("lights");
-    }, { width: 390, height: 844 });
+      const focused = await keys.evaluate((el) => document.activeElement === el);
+      check(focused, "phone: the hidden input keeps focus while typing");
+    }, { width: 390, height: 844 }, { isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
   }
 } finally {
   await browser.close();
