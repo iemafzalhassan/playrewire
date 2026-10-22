@@ -1,0 +1,65 @@
+{
+  "expected_rewards": [
+    {
+      "kind": "xp",
+      "value": 30
+    },
+    {
+      "kind": "streak_extended",
+      "value": 2
+    }
+  ],
+  "expected_state": {
+    "completed": [
+      "go/loops-1:drill",
+      "go/loops-2:drill"
+    ],
+    "concepts": {
+      "loops": {
+        "box_level": 2,
+        "due": "2026-03-06",
+        "fails": 0,
+        "successes": 2
+      }
+    },
+    "mission_encounters": {},
+    "streak": {
+      "best": 2,
+      "current": 2,
+      "freezes": 0,
+      "last_day": "2026-03-02"
+    },
+    "xp": 60
+  },
+  "record": {
+    "chunk_id": "go/loops-2",
+    "concept": "loops",
+    "first_try": true,
+    "hints_used": 0,
+    "local_date": "2026-03-02",
+    "mission_id": null,
+    "step": "drill",
+    "success": true
+  },
+  "state": {
+    "completed": [
+      "go/loops-1:drill"
+    ],
+    "concepts": {
+      "loops": {
+        "box_level": 1,
+        "due": "2026-03-03",
+        "fails": 0,
+        "successes": 1
+      }
+    },
+    "mission_encounters": {},
+    "streak": {
+      "best": 1,
+      "current": 1,
+      "freezes": 0,
+      "last_day": "2026-03-01"
+    },
+    "xp": 30
+  }
+}

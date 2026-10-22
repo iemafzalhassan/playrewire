@@ -28,11 +28,11 @@ test-web:
     #!/usr/bin/env bash
     set -euo pipefail
     [ -f apps/web/public/lab/lab.wasm ] && [ -f apps/web/public/lab/wasm_exec.js ] || just wasm-lab
+    [ -f apps/web/src/core/pkg/rewire_core_wasm_bg.wasm ] || just wasm-core
     pnpm -r test
 
 # Build every wasm output into apps/web/public/ (git-ignored build outputs).
-# Later tasks add their own wasm-* recipe here (Task 12 core-wasm).
-wasm: wasm-world wasm-lab
+wasm: wasm-world wasm-lab wasm-core
 
 # Bevy street -> apps/web/public/world/ (rewire_world.js + rewire_world_bg.wasm).
 wasm-world:
@@ -44,6 +44,11 @@ wasm-lab:
     mkdir -p apps/web/public/lab
     cd lab-wasm && GOOS=js GOARCH=wasm go build -trimpath -ldflags=-s -o ../apps/web/public/lab/lab.wasm ./cmd/lab
     cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" apps/web/public/lab/wasm_exec.js
+
+# rewire-core rules -> apps/web/src/core/pkg/ (git-ignored; imported by src/core/index.ts).
+wasm-core:
+    cargo build -p rewire-core-wasm --target wasm32-unknown-unknown --release
+    wasm-bindgen --target web --out-dir apps/web/src/core/pkg target/wasm32-unknown-unknown/release/rewire_core_wasm.wasm
 
 # Validate content packs (running every solution), then emit the bundle.
 content:

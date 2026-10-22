@@ -32,3 +32,6 @@ apps/web/public/content/
 
 # spike build output
 apps/web/spike/.build/
+
+# Generated rewire-core wasm (just wasm-core)
+apps/web/src/core/pkg/

@@ -5172,6 +5172,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rewire-core-wasm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "console_error_panic_hook",
+ "rewire-core",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "rewire-lab"
 version = "0.1.0"
 dependencies = [
