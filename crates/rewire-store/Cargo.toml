@@ -1,0 +1,20 @@
+[package]
+name = "rewire-store"
+description = "SQLite persistence and step-event outbox for PlayRewire (desktop)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rewire-core = { path = "../rewire-core" }
+# `bundled` so the system SQLite version never matters.
+rusqlite = { version = "0.40", features = ["bundled"] }
+thiserror = "2"
+serde_json = "1"
+# No `clock` feature: only used to format a unix timestamp as RFC 3339.
+chrono = { version = "0.4", default-features = false, features = ["std", "alloc"] }
+
+[dev-dependencies]
+tempfile = "3"
+chrono = { version = "0.4", default-features = false, features = ["std", "alloc", "serde"] }
