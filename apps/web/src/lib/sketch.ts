@@ -46,3 +46,30 @@ export function blob(cx: number, cy: number, rx: number, ry: number, seed: numbe
   }
   return smoothPath(pts, true);
 }
+
+/** A box drawn by hand: wobbly corners, slightly bowed sides, a small overshoot where the pen closes it. */
+export function roughRect(x: number, y: number, w: number, h: number, seed = 1, jitter = 1.6): string {
+  const r = rng(seed);
+  const j = () => (r() - 0.5) * 2 * jitter;
+  const c: Pt[] = [
+    [x + j(), y + j()],
+    [x + w + j(), y + j()],
+    [x + w + j(), y + h + j()],
+    [x + j(), y + h + j()],
+  ];
+  let d = `M${f(c[0][0])} ${f(c[0][1])}`;
+  for (let i = 0; i < 4; i++) {
+    const a = c[i];
+    const b: Pt = i === 3 ? [c[0][0] + 2.5, c[0][1] - 0.8] : c[i + 1];
+    d += ` Q${f((a[0] + b[0]) / 2 + j() * 0.7)} ${f((a[1] + b[1]) / 2 + j() * 0.7)} ${f(b[0])} ${f(b[1])}`;
+  }
+  return d;
+}
+
+/** A line drawn by hand: one gentle bend. */
+export function roughLine(x1: number, y1: number, x2: number, y2: number, seed = 1, bend = 2): string {
+  const r = rng(seed);
+  const mx = (x1 + x2) / 2 + (r() - 0.5) * 2 * bend;
+  const my = (y1 + y2) / 2 + (r() - 0.5) * 2 * bend;
+  return `M${f(x1)} ${f(y1)} Q${f(mx)} ${f(my)} ${f(x2)} ${f(y2)}`;
+}

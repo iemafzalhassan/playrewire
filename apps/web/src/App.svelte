@@ -2,12 +2,16 @@
   import { onMount, tick } from "svelte";
   import { getBackend } from "./backend";
   import { DEFAULT_SETTINGS, emptyProgress, type Settings } from "./backend/types";
-  import { BundleSchema, type Bundle } from "./content/types";
+  import type { Bundle } from "./content/types";
+  import { loadBundle, loadTrouble } from "./content/load";
   import { dueConcepts, initCore, level, type ProgressState } from "./core";
   import Icon from "./lib/Icon.svelte";
   import Card from "./lib/Card.svelte";
+  import InkButton from "./lib/InkButton.svelte";
   import { onNotice } from "./notice";
   import { chunkDone, findChunk, nextChunk } from "./path";
+  import ChunkPlayer from "./player/ChunkPlayer.svelte";
+  import { localDate } from "./player/drill";
   import { createRouter, href, type Route } from "./router.svelte";
   import Home from "./routes/Home.svelte";
   import Map from "./routes/Map.svelte";
@@ -28,16 +32,25 @@
   let notice = $state<string | null>(null);
   let coreReady = $state(false);
 
-  const today = (() => {
-    const d = new Date();
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  })();
+  // The learner's own calendar day (local time, never UTC).
+  const today = localDate();
+  let trouble = $state(loadTrouble());
 
-  async function loadBundle(): Promise<Bundle> {
-    const r = await fetch(`${import.meta.env.BASE_URL}content/go.json`);
-    if (!r.ok) throw new Error(`content: HTTP ${r.status}`);
-    return BundleSchema.parse(await r.json());
+  async function load() {
+    phase = "loading";
+    try {
+      settings = await backend.getSettings();
+      applySettings(settings);
+      const [, p, b] = await Promise.all([initCore(), backend.loadProgress(), loadBundle()]);
+      progress = p;
+      bundle = b;
+      coreReady = true;
+      phase = "ready";
+    } catch (e) {
+      console.error(e);
+      trouble = loadTrouble();
+      phase = "failed";
+    }
   }
 
   onMount(() => {
@@ -46,20 +59,7 @@
     const reapply = () => applySettings(settings);
     calm.addEventListener("change", reapply);
 
-    (async () => {
-      try {
-        settings = await backend.getSettings();
-        applySettings(settings);
-        const [, p, b] = await Promise.all([initCore(), backend.loadProgress(), loadBundle()]);
-        progress = p;
-        bundle = b;
-        coreReady = true;
-        phase = "ready";
-      } catch (e) {
-        console.error(e);
-        phase = "failed";
-      }
-    })();
+    load();
 
     return () => {
       stopNotice();
@@ -122,10 +122,10 @@
     { route: { name: "settings" }, label: "settings", icon: "sliders" },
   ];
   const isCurrent = (r: Route) => router.route.name === r.name;
-  const learnTitle = $derived.by(() => {
+  const learnChunk = $derived.by(() => {
     const r = router.route;
-    if (r.name !== "learn" || !bundle) return "this page";
-    return findChunk(bundle, r)?.title ?? "this page";
+    if (r.name !== "learn" || !bundle) return undefined;
+    return findChunk(bundle, r);
   });
 </script>
 
@@ -195,8 +195,9 @@
     <p class="hush" aria-live="polite">opening the sketchbook…</p>
   {:else if phase === "failed" || !home}
     <Card tilt={-0.6} edge="b" class="oops">
-      <h1 id="page-title" class="hand-title" tabindex="-1">The pages didn't load</h1>
-      <p>Something went wrong while opening the lessons. Reload the page to try again.</p>
+      <h1 id="page-title" class="hand-title" tabindex="-1">{trouble.title}</h1>
+      <p>{trouble.text}</p>
+      <InkButton onclick={load}>try again</InkButton>
     </Card>
   {:else if router.route.name === "home"}
     <Home
@@ -209,8 +210,16 @@
       here={next?.pack ?? null}
       onOpen={(ref) => router.go({ name: "learn", ...ref })}
     />
-  {:else if router.route.name === "learn"}
-    <Soon title={learnTitle} />
+  {:else if router.route.name === "learn" && learnChunk}
+    {#key learnChunk.id}
+      <ChunkPlayer
+        chunk={learnChunk}
+        {progress}
+        {backend}
+        onProgress={(s) => (progress = s)}
+        onHome={() => router.go({ name: "home" })}
+      />
+    {/key}
   {:else}
     <Soon title="Lost page" />
   {/if}

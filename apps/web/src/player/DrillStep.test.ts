@@ -1,0 +1,110 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { initCore } from "../core";
+import type { RawRunResult } from "../lab/protocol";
+import DrillStep from "./DrillStep.svelte";
+
+beforeAll(async () => {
+  await initCore();
+});
+
+const ok = (stdout: string): RawRunResult => ({ stdout, stderr: "", exitCode: 0, timedOut: false, truncated: false, durationMs: 5 });
+const bad = (stderr: string): RawRunResult => ({ stdout: "", stderr, exitCode: 1, timedOut: false, truncated: false, durationMs: 5 });
+
+const drill = (n: number) => ({
+  prompt: `Print ${n}.`,
+  starter: `fmt.Println(${n})`,
+  solution: `fmt.Println(${n})`,
+  expectStdout: `${n}\n`,
+  wholeFile: false,
+});
+const drills = [1, 2, 3, 4, 5].map(drill);
+const hints = ["first hint", "second hint", "third hint"];
+
+function setup(results: RawRunResult[]) {
+  const run = vi.fn(async () => results.shift() ?? ok(""));
+  const onDone = vi.fn();
+  render(DrillStep, { props: { drills, hints, run, onDone } });
+  return { run, onDone };
+}
+const runBtn = () => screen.getByRole("button", { name: /^run/i });
+
+describe("DrillStep", () => {
+  it("DrillStep shows friendly card above raw error", async () => {
+    const { run } = setup([bad("8:13: undefined: x\n")]);
+    await fireEvent.click(runBtn());
+    const title = await screen.findByText("Unknown name");
+    expect(run).toHaveBeenCalledWith([{ name: "main.go", source: expect.stringContaining("func main() {\nfmt.Println(1)\n}") }]);
+
+    const card = title.closest(".error-card") as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.textContent).toMatch(/Go doesn't know what/);
+    expect(card.textContent).toMatch(/line 1/);
+    const details = card.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.textContent).toContain("8:13: undefined: x");
+    // friendly words first, the raw message after
+    expect(title.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("pass/fail shows ✓/✗ glyphs not just color", async () => {
+    setup([ok("7\n"), ok("1\n")]);
+    await fireEvent.click(runBtn());
+    const fail = await screen.findByTestId("drill-result");
+    expect(fail.textContent).toContain("✗");
+    expect(fail.textContent).not.toContain("✓");
+    await fireEvent.click(runBtn());
+    await waitFor(() => expect(screen.getByTestId("drill-result").textContent).toContain("✓"));
+    expect(screen.getByTestId("drill-result").textContent).toContain("1");
+  });
+
+  it("three passes in a row complete the step; a fail resets the run", async () => {
+    const { onDone } = setup([
+      bad("8:1: undefined: y\n"),
+      ok("1\n"),
+      bad("8:1: undefined: y\n"),
+      ok("2\n"),
+      ok("3\n"),
+      ok("4\n"),
+    ]);
+    const passes = () => screen.getByTestId("passes").textContent;
+
+    await fireEvent.click(runBtn()); // the first run fails, so this is not a first try
+    await screen.findByText("Unknown name");
+    await fireEvent.click(runBtn()); // pass drill 1
+    await screen.findByRole("button", { name: /next drill/i });
+    expect(passes()).toMatch(/1 of 3/);
+    await fireEvent.click(screen.getByRole("button", { name: /next drill/i }));
+    expect(screen.getByText("Print 2.")).toBeTruthy();
+
+    await fireEvent.click(runBtn()); // fail: the run of passes resets
+    await screen.findByText("Unknown name");
+    expect(passes()).toMatch(/0 of 3/);
+
+    await fireEvent.click(runBtn()); // pass drill 2
+    await fireEvent.click(await screen.findByRole("button", { name: /next drill/i }));
+    await fireEvent.click(runBtn()); // pass drill 3
+    await fireEvent.click(await screen.findByRole("button", { name: /next drill/i }));
+    expect(onDone).not.toHaveBeenCalled();
+    await fireEvent.click(runBtn()); // pass drill 4: three in a row
+    await waitFor(() => expect(onDone).toHaveBeenCalledOnce());
+    expect(onDone).toHaveBeenCalledWith({ hintsUsed: 0, firstTry: false });
+  });
+
+  it("hints come one at a time and are counted; a clean first run is first_try", async () => {
+    const { onDone } = setup([ok("1\n"), ok("2\n"), ok("3\n")]);
+    await fireEvent.click(runBtn());
+    await fireEvent.click(await screen.findByRole("button", { name: /next drill/i }));
+    const hint = () => screen.getByRole("button", { name: /hint/i });
+    await fireEvent.click(hint());
+    expect(screen.getByText("first hint")).toBeTruthy();
+    expect(screen.queryByText("second hint")).toBeNull();
+    await fireEvent.click(hint());
+    expect(screen.getByText("second hint")).toBeTruthy();
+    await fireEvent.click(runBtn());
+    await fireEvent.click(await screen.findByRole("button", { name: /next drill/i }));
+    await fireEvent.click(runBtn());
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith({ hintsUsed: 2, firstTry: true }));
+  });
+});

@@ -1,0 +1,124 @@
+/* Shared ink for the See scenes. Every animation runs *towards* the element's
+   own style, so with reduced motion (animation: none) each scene simply shows
+   its final frame. */
+.scene {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.scene .ink {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.scene .thin {
+  stroke-width: 1.6;
+}
+.scene .bold {
+  stroke-width: 3.2;
+}
+.scene .soft {
+  stroke: var(--ink-soft);
+}
+.scene .pencil {
+  stroke: var(--pencil);
+  stroke-dasharray: 2 6;
+}
+.scene .accent-line {
+  stroke: var(--accent);
+}
+.scene .card {
+  fill: var(--card);
+}
+.scene .paper {
+  fill: var(--paper-deep);
+}
+.scene .inkfill {
+  fill: var(--ink);
+}
+.scene .accentfill {
+  fill: var(--accent);
+}
+.scene .glow {
+  fill: var(--highlight);
+}
+.scene .wob {
+  filter: url(#ink-wobble);
+}
+.scene .hand {
+  font-family: var(--font-display);
+  font-weight: 700;
+  fill: var(--ink);
+}
+.scene .note {
+  font-family: var(--font-display);
+  font-weight: 600;
+  fill: var(--accent-deep);
+}
+.scene .mono {
+  font-family: var(--font-code);
+  fill: var(--ink);
+}
+.scene .on-ink {
+  fill: var(--card);
+}
+.scene .mid {
+  text-anchor: middle;
+}
+
+/* Building blocks: add a class and a delay (style="--d: 1.2s"). */
+.scene .a-draw {
+  stroke-dasharray: 1;
+  animation: scene-draw var(--t, var(--motion-draw)) var(--motion-ease) var(--d, 0s) both;
+}
+.scene .a-fade {
+  animation: scene-fade var(--t, var(--motion-slow)) ease-out var(--d, 0s) both;
+}
+.scene .a-pop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: scene-pop var(--t, 420ms) cubic-bezier(0.3, 1.6, 0.5, 1) var(--d, 0s) both;
+}
+.scene .a-drop {
+  animation: scene-drop var(--t, 800ms) linear var(--d, 0s) both;
+}
+@keyframes scene-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes scene-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes scene-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+@keyframes scene-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-110px);
+    animation-timing-function: cubic-bezier(0.5, 0, 1, 1);
+  }
+  12% {
+    opacity: 1;
+  }
+  62% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+  78% {
+    transform: translateY(-10px);
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
