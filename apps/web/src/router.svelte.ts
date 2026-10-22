@@ -8,7 +8,12 @@ export type Route =
   | { name: "missing" };
 
 export function parseHash(hash: string): Route {
-  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return { name: "missing" }; // malformed %-escape: a bad link, not a crash
+  }
   if (parts.length === 0) return { name: "home" };
   if (parts.length === 1 && parts[0] === "map") return { name: "map" };
   if (parts.length === 1 && parts[0] === "settings") return { name: "settings" };

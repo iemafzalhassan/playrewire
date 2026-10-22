@@ -47,9 +47,9 @@
     calm.addEventListener("change", reapply);
 
     (async () => {
-      settings = await backend.getSettings();
-      applySettings(settings);
       try {
+        settings = await backend.getSettings();
+        applySettings(settings);
         const [, p, b] = await Promise.all([initCore(), backend.loadProgress(), loadBundle()]);
         progress = p;
         bundle = b;
@@ -82,7 +82,7 @@
   function saveSettings(s: Settings) {
     settings = s;
     applySettings(s);
-    void backend.saveSettings(s);
+    backend.saveSettings(s).catch((e) => console.error("could not save settings", e));
   }
 
   const next = $derived(bundle ? nextChunk(bundle.path, progress, bundle) : null);

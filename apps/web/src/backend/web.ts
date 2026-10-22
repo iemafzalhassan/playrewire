@@ -5,7 +5,7 @@
 import "../zod-config";
 import { z } from "zod";
 import { webRun } from "../lab/webRunner";
-import type { ProgressState } from "../core";
+import type { ProgressState, StepRecord } from "../core";
 import {
   DEFAULT_SETTINGS,
   MENTOR_FALLBACK,
@@ -16,6 +16,9 @@ import {
 
 export const PROGRESS_KEY = "rewire.progress.v1";
 export const SETTINGS_KEY = "rewire.settings.v1";
+/** Step records waiting for Phase 2 sync (spec 7.8), newest last. */
+export const OUTBOX_KEY = "rewire.outbox.v1";
+export const OUTBOX_MAX = 500;
 export const STORAGE_NOTICE = "Progress won't be saved in this window.";
 
 const ProgressSchema = z.object({
@@ -53,7 +56,12 @@ export interface WebBackendOptions {
   onNotice?: (text: string) => void;
 }
 
-export function createWebBackend(opts: WebBackendOptions = {}): Backend {
+export interface WebBackend extends Backend {
+  /** The step records in the local outbox, oldest first. */
+  pendingOutbox(): StepRecord[];
+}
+
+export function createWebBackend(opts: WebBackendOptions = {}): WebBackend {
   const memory = new Map<string, string>();
   let durable = true;
 
@@ -95,15 +103,22 @@ export function createWebBackend(opts: WebBackendOptions = {}): Backend {
     }
   }
 
+  // Validated loosely: the outbox is only ever written by saveProgress below.
+  const OutboxSchema = z.array(z.looseObject({ chunk_id: z.string(), step: z.string() }));
+  const readOutbox = () => parse(OUTBOX_KEY, OutboxSchema, []) as unknown as StepRecord[];
+
   return {
     kind: "web",
+    pendingOutbox: readOutbox,
     run: (files) => webRun(files),
     async loadProgress() {
       return parse<ProgressState>(PROGRESS_KEY, ProgressSchema, emptyProgress());
     },
-    async saveProgress(state) {
-      // The step record matters on desktop (SQLite outbox). The web MVP keeps state only.
+    async saveProgress(state, rec) {
       write(PROGRESS_KEY, JSON.stringify(state));
+      // Every finished step also goes to the local outbox for Phase 2 sync,
+      // like the desktop SQLite outbox. Capped so storage can't fill up.
+      write(OUTBOX_KEY, JSON.stringify([...readOutbox(), rec].slice(-OUTBOX_MAX)));
     },
     async toolchain() {
       return { status: "n/a" };

@@ -96,6 +96,52 @@ describe("web backend", () => {
     expect((await b2.getSettings()).textScale).toBe(1.5);
   });
 
+  it("web backend appends step records to the outbox", async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    const { createWebBackend } = await import("./web");
+    const b = createWebBackend();
+    const s = await b.loadProgress();
+    await b.saveProgress(s, rec);
+    await b.saveProgress(s, { ...rec, step: "type" });
+    const outbox = JSON.parse(storage.getItem("rewire.outbox.v1")!);
+    expect(outbox).toEqual([rec, { ...rec, step: "type" }]);
+  });
+
+  it("outbox keeps only the newest 500", async () => {
+    const storage = memoryStorage();
+    const old = Array.from({ length: 500 }, (_, i) => ({ ...rec, hints_used: i }));
+    storage.setItem("rewire.outbox.v1", JSON.stringify(old));
+    vi.stubGlobal("localStorage", storage);
+    const { createWebBackend } = await import("./web");
+    const b = createWebBackend();
+    await b.saveProgress(await b.loadProgress(), { ...rec, hints_used: 999 });
+    const outbox = JSON.parse(storage.getItem("rewire.outbox.v1")!);
+    expect(outbox).toHaveLength(500);
+    expect(outbox[0].hints_used).toBe(1);
+    expect(outbox[499].hints_used).toBe(999);
+  });
+
+  it("outbox survives localStorage throwing", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem() {
+        throw new DOMException("denied", "SecurityError");
+      },
+      setItem() {
+        throw new DOMException("quota", "QuotaExceededError");
+      },
+    });
+    const { createWebBackend, OUTBOX_KEY } = await import("./web");
+    const notices: string[] = [];
+    const b = createWebBackend({ onNotice: (t) => notices.push(t) });
+    const s = await b.loadProgress();
+    await b.saveProgress(s, rec);
+    await b.saveProgress(s, { ...rec, step: "drill" });
+    expect(OUTBOX_KEY).toBe("rewire.outbox.v1");
+    expect(b.pendingOutbox()).toEqual([rec, { ...rec, step: "drill" }]);
+    expect(notices).toEqual(["Progress won't be saved in this window."]);
+  });
+
   it("web backend ignores corrupt stored data", async () => {
     const storage = memoryStorage();
     storage.setItem(PROGRESS_KEY, "{not json");
