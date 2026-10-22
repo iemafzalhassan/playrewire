@@ -1,6 +1,6 @@
-// Desktop backend: every call goes to a Tauri command (implemented in Task 15,
-// apps/desktop/src-tauri). Argument keys are camelCase here; Tauri maps them
-// to the snake_case Rust parameters (presetId -> preset_id).
+// Desktop backend: every call goes to a Tauri command (apps/desktop/src-tauri).
+// Argument keys are camelCase here; Tauri maps them to the snake_case Rust
+// parameters (presetId -> preset_id).
 //
 // Command contract:
 //   run_code({files: SourceFile[]})            -> RawRunResult (camelCase fields)
@@ -12,9 +12,20 @@
 //   get_settings()                             -> Settings
 //   save_settings({settings})                  -> ()
 //   set_api_key({presetId, key})               -> ()  (key goes to the OS keychain)
+//   get_presets()                              -> Preset[]
+//
+// A failing command rejects with a stable code string (see ./errors.ts); every
+// call here turns that into a BackendError whose message is friendly copy.
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { AgUiEvent, Backend, Settings } from "./types";
+import { toBackendError } from "./errors";
+import type { AgUiEvent, Backend, Preset, Settings } from "./types";
 import type { ProgressState, RawRunResult } from "./types";
+
+function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return invoke<T>(cmd, args).catch((e: unknown) => {
+    throw toBackendError(e);
+  });
+}
 
 export function createTauriBackend(): Backend {
   // mentorAvailable() is synchronous, so remember the last settings we saw.
@@ -26,30 +37,31 @@ export function createTauriBackend(): Backend {
 
   return {
     kind: "desktop",
-    run: (files) => invoke<RawRunResult>("run_code", { files }),
-    loadProgress: () => invoke<ProgressState>("load_progress"),
+    run: (files) => call<RawRunResult>("run_code", { files }),
+    loadProgress: () => call<ProgressState>("load_progress"),
     async saveProgress(state, rec) {
-      await invoke("save_progress", { state, rec });
+      await call("save_progress", { state, rec });
     },
-    toolchain: () => invoke<{ status: "ready" | "missing" }>("toolchain_status"),
+    toolchain: () => call<{ status: "ready" | "missing" }>("toolchain_status"),
     async installToolchain(onProgress) {
       const ch = new Channel<{ done: number; total: number }>();
       ch.onmessage = (m) => onProgress(m.done, m.total);
-      await invoke("install_toolchain", { onProgress: ch });
+      await call("install_toolchain", { onProgress: ch });
     },
     mentorAvailable: () => mentorOn,
     async mentorHint(req, onEvent) {
       const ch = new Channel<AgUiEvent>();
       ch.onmessage = onEvent;
-      await invoke("mentor_hint", { req, onEvent: ch });
+      await call("mentor_hint", { req, onEvent: ch });
     },
-    getSettings: () => invoke<Settings>("get_settings").then(remember),
+    getSettings: () => call<Settings>("get_settings").then(remember),
     async saveSettings(settings) {
-      await invoke("save_settings", { settings });
+      await call("save_settings", { settings });
       remember(settings);
     },
     async setApiKey(presetId, key) {
-      await invoke("set_api_key", { presetId, key });
+      await call("set_api_key", { presetId, key });
     },
+    getPresets: () => call<Preset[]>("get_presets"),
   };
 }

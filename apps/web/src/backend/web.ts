@@ -139,5 +139,8 @@ export function createWebBackend(opts: WebBackendOptions = {}): WebBackend {
     async setApiKey() {
       throw new Error("The mentor needs the desktop app.");
     },
+    async getPresets() {
+      return [];
+    },
   };
 }

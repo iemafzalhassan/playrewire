@@ -8,6 +8,8 @@
   import Icon from "./lib/Icon.svelte";
   import Card from "./lib/Card.svelte";
   import InkButton from "./lib/InkButton.svelte";
+  import ToolchainCard from "./lab/ToolchainCard.svelte";
+  import { createToolchain, setToolchainContext } from "./lab/toolchain.svelte";
   import { onNotice } from "./notice";
   import { chunkDone, findChunk, nextChunk } from "./path";
   import ChunkPlayer from "./player/ChunkPlayer.svelte";
@@ -24,6 +26,9 @@
 
   const backend = getBackend();
   const router = createRouter();
+  // Desktop: the one-time Go download, shared with every drill.
+  const toolchain = backend.kind === "desktop" ? createToolchain(backend) : null;
+  if (toolchain) setToolchainContext(toolchain);
 
   let settings = $state<Settings>({ ...DEFAULT_SETTINGS });
   let progress = $state<ProgressState>(emptyProgress());
@@ -60,6 +65,7 @@
     calm.addEventListener("change", reapply);
 
     load();
+    toolchain?.check();
 
     return () => {
       stopNotice();
@@ -185,6 +191,14 @@
         <Icon name="close" size={18} />
       </button>
     </Card>
+  </div>
+{/if}
+
+{#if toolchain?.needed && router.route.name !== "learn"}
+  <!-- First launch on desktop: Go isn't here yet. Inside a lesson the drill
+       shows this card itself when Run needs Go; See and Type never wait. -->
+  <div class="notice-wrap">
+    <ToolchainCard {toolchain} />
   </div>
 {/if}
 

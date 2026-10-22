@@ -193,6 +193,7 @@ describe("tauri backend", () => {
     await b.getSettings();
     await b.saveSettings({ reducedMotion: true, dyslexiaFont: false, textScale: 1, mentor: null });
     await b.setApiKey("anthropic", "k");
+    await b.getPresets();
     expect(invoke.mock.calls.map((c) => c[0])).toEqual([
       "load_progress",
       "toolchain_status",
@@ -204,6 +205,34 @@ describe("tauri backend", () => {
       "get_settings",
       "save_settings",
       "set_api_key",
+      "get_presets",
     ]);
+  });
+
+  it("tauri backend turns command error codes into friendly BackendErrors", async () => {
+    const invoke = vi.fn(async (cmd: string) => {
+      if (cmd === "run_code") throw "toolchain_missing";
+      if (cmd === "install_toolchain") throw "offline";
+      throw "something-new";
+    });
+    class Channel<T> {
+      onmessage: (m: T) => void = () => {};
+    }
+    vi.doMock("@tauri-apps/api/core", () => ({ invoke, Channel }));
+    const { createTauriBackend } = await import("./tauri");
+    const { BackendError, GO_OFFLINE_COPY } = await import("./errors");
+    const b = createTauriBackend();
+
+    const run = await b.run([]).catch((e: unknown) => e);
+    expect(run).toBeInstanceOf(BackendError);
+    expect((run as InstanceType<typeof BackendError>).code).toBe("toolchain_missing");
+
+    const inst = await b.installToolchain(() => {}).catch((e: unknown) => e);
+    expect((inst as Error).message).toBe(GO_OFFLINE_COPY);
+
+    // Unknown codes never reach the screen as-is.
+    const other = await b.loadProgress().catch((e: unknown) => e);
+    expect((other as InstanceType<typeof BackendError>).code).toBe("io");
+    expect((other as Error).message).not.toContain("something-new");
   });
 });

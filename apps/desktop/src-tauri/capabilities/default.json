@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core only. No fs, shell or http plugins: Go runs, storage and mentor HTTP all happen in Rust commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

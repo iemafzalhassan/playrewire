@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { initCore } from "../core";
 import type { RawRunResult } from "../lab/protocol";
+import { BackendError } from "../backend/errors";
+import { TOOLCHAIN_CONTEXT, createToolchain } from "../lab/toolchain.svelte";
 import DrillStep from "./DrillStep.svelte";
 
 beforeAll(async () => {
@@ -167,5 +169,32 @@ describe("DrillStep", () => {
     }
     await fireEvent.click(runBtn());
     await waitFor(() => expect(onDone).toHaveBeenCalledWith({ hintsUsed: 0, firstTry: true }));
+  });
+
+  it("toolchain_missing on run shows the Go download card, not a code error", async () => {
+    const run = vi.fn(async () => {
+      throw new BackendError("toolchain_missing");
+    });
+    const tc = createToolchain({ toolchain: async () => ({ status: "ready" }), installToolchain: async () => {} });
+    render(DrillStep, {
+      props: { drills, hints, run, onDone: vi.fn() },
+      context: new Map([[TOOLCHAIN_CONTEXT, tc]]),
+    });
+    await fireEvent.click(runBtn());
+    const card = await screen.findByTestId("toolchain-card");
+    expect(card.textContent).toMatch(/download Go once \(about 70 MB\)/);
+    expect(tc.phase).toBe("missing");
+    expect(screen.getByTestId("passes").textContent).toContain("0 of 3");
+  });
+
+  it("sandbox_unavailable shows the Linux sandbox words", async () => {
+    const run = vi.fn(async () => {
+      throw new BackendError("sandbox_unavailable");
+    });
+    render(DrillStep, { props: { drills, hints, run, onDone: vi.fn() } });
+    await fireEvent.click(runBtn());
+    expect(
+      await screen.findByText("Rewire couldn't start its safe practice space on this system. See docs: Linux sandbox setup."),
+    ).toBeTruthy();
   });
 });

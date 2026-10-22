@@ -9,6 +9,9 @@
   import Card from "../lib/Card.svelte";
   import Icon from "../lib/Icon.svelte";
   import InkButton from "../lib/InkButton.svelte";
+  import { BackendError, ERROR_COPY } from "../backend/errors";
+  import ToolchainCard from "../lab/ToolchainCard.svelte";
+  import { getToolchainContext } from "../lab/toolchain.svelte";
   import CodeEditor from "./CodeEditor.svelte";
   import { checkDrill, clock, cpm, wrapMain } from "./drill";
   import ErrorCard from "./ErrorCard.svelte";
@@ -36,7 +39,11 @@
   type Result =
     | { kind: "pass"; stdout: string; ms: number; cpm: number }
     | { kind: "error"; errors: FriendlyError[] }
-    | { kind: "wrong"; got: string[]; want: string[]; diffLine: number };
+    | { kind: "wrong"; got: string[]; want: string[]; diffLine: number }
+    | { kind: "toolchain" };
+
+  // Desktop only: the shared Go download (see lab/toolchain.svelte.ts).
+  const toolchain = getToolchainContext();
 
   let idx = $state(0);
   let round = $state(1);
@@ -81,6 +88,15 @@
     };
   }
 
+  /** A desktop command failed before Go ran: say why in plain words. */
+  function thrownTrouble(e: unknown): FriendlyError {
+    if (e instanceof BackendError) {
+      const copy = ERROR_COPY[e.code];
+      return { line: null, col: null, title: copy.title, plain: copy.text, raw: "" };
+    }
+    return labTrouble(`could not start the code runner: ${String(e)}\n`)!;
+  }
+
   const lines = (s: string) => s.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
 
   async function runCode() {
@@ -95,17 +111,31 @@
     const source = code;
     const hintsAtRun = hintsShown;
     const { source: file, lineOffset } = wrapMain(source, d.wholeFile);
-    let r: RawRunResult;
+    let r: RawRunResult | null = null;
+    let thrown: { e: unknown } | null = null;
     try {
       r = await run([{ name: "main.go", source: file }]);
     } catch (e) {
-      r = { stdout: "", stderr: `could not start the code runner: ${String(e)}\n`, exitCode: 1, timedOut: false, truncated: false, durationMs: 0 };
+      thrown = { e };
     }
     clearTimeout(slowTimer);
     // A stale answer touches nothing, not even `running`: another run may be in flight.
     if (token !== round || finished) return;
     slow = false;
     running = false;
+
+    if (thrown || !r) {
+      // Not the learner's code: no verdict, no reset of their run of passes.
+      if (thrown?.e instanceof BackendError && thrown.e.code === "toolchain_missing" && toolchain) {
+        toolchain.markMissing();
+        result = { kind: "toolchain" };
+      } else {
+        result = { kind: "error", errors: [thrownTrouble(thrown?.e)] };
+      }
+      await tick();
+      resultEl?.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
 
     const trouble = labTrouble(r.stderr);
     const errors = trouble
@@ -252,6 +282,8 @@
     {:else if result?.kind === "error"}
       <p class="verdict small"><span class="glyph" aria-hidden="true">✗</span> <span>Not yet. Go stopped here:</span></p>
       <ErrorCard errors={result.errors} />
+    {:else if result?.kind === "toolchain" && toolchain}
+      <ToolchainCard {toolchain} tilt={0.4} />
     {:else if result?.kind === "wrong"}
       <Card edge="c" tilt={-0.4} class="wrong-card">
         <p class="verdict">

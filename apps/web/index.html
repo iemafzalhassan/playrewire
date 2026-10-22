@@ -3,10 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- 'wasm-unsafe-eval' lets WebAssembly compile (lab + core). No 'unsafe-eval'. -->
+    <!-- 'wasm-unsafe-eval' lets WebAssembly compile (lab + core). No 'unsafe-eval'.
+         ipc: and http://ipc.localhost are the Tauri desktop IPC; nothing on the web answers there. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'"
     />
     <meta name="theme-color" content="#f6f0e4" />
     <meta name="description" content="Rewire: a free game that turns beginners into real engineers." />

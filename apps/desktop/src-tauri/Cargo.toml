@@ -1,0 +1,35 @@
+[package]
+name = "rewire-desktop"
+description = "Rewire desktop app: the Tauri v2 shell around the shared Svelte UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "rewire_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rewire"
+path = "src/main.rs"
+
+[build-dependencies]
+# Pinned: 2.7.4 is under the 7-day supply-chain floor.
+tauri-build = { version = "=2.7.3", features = [] }
+
+[dependencies]
+# Pinned to match @tauri-apps/api 2.12.4; 2.12.5 is under the 7-day floor.
+tauri = { version = "=2.12.4", features = [] }
+rewire-core = { path = "../../../crates/rewire-core" }
+rewire-lab = { path = "../../../crates/rewire-lab" }
+rewire-mentor = { path = "../../../crates/rewire-mentor" }
+rewire-store = { path = "../../../crates/rewire-store" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+rusqlite = { version = "0.40", features = ["bundled"] }
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

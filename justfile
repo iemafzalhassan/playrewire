@@ -76,8 +76,13 @@ dev-web: web-prereqs
 e2e-web *args: web-prereqs
     cd apps/web && pnpm e2e {{args}}
 
-dev-desktop:
-    @echo "dev-desktop: not built yet (Task 15)"
+# Tauri desktop app with the Vite dev server (tauri.conf.json starts `pnpm --filter web dev`).
+dev-desktop: web-prereqs
+    cd apps/desktop/src-tauri && CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo tauri dev
+
+# Release desktop binary (no installer yet) -> target/release/rewire.
+build-desktop: web-prereqs
+    cd apps/desktop/src-tauri && CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo tauri build --no-bundle
 
 # Static web build -> apps/web/dist (desktop packaging comes with Task 15/18).
 bundle: web-prereqs

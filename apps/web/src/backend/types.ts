@@ -30,6 +30,18 @@ export type AgUiEvent =
   | { type: "RUN_FINISHED"; threadId: string; runId: string }
   | { type: "RUN_ERROR"; message: string };
 
+/** Mirrors rewire-mentor's Preset (from the `get_presets` command). */
+export interface Preset {
+  id: string;
+  label: string;
+  base_url: string;
+  api: "OpenAiCompatible" | "AnthropicMessages";
+  needs_key: boolean;
+  /** Runs on this computer (no key, nothing leaves the device). */
+  local: boolean;
+  default_model: string;
+}
+
 export type TextScale = 1 | 1.25 | 1.5;
 
 export interface Settings {
@@ -54,6 +66,8 @@ export interface Backend {
   getSettings(): Promise<Settings>;
   saveSettings(s: Settings): Promise<void>;
   setApiKey(presetId: string, key: string): Promise<void>;
+  /** Mentor provider presets (empty on web: the mentor needs the desktop app). */
+  getPresets(): Promise<Preset[]>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

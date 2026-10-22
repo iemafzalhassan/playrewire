@@ -36,3 +36,6 @@ apps/web/spike/.build/
 
 # Generated rewire-core wasm (just wasm-core)
 apps/web/src/core/pkg/
+
+# Tauri-generated ACL schemas (rebuilt by tauri-build)
+apps/desktop/src-tauri/gen/
