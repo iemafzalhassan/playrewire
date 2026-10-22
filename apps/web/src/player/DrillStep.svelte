@@ -86,10 +86,12 @@
   async function runCode() {
     if (running || passed || finished) return;
     running = true;
-    const slowTimer = setTimeout(() => (slow = true), 900);
-    const d = drill;
     // The run belongs to this drill round; if the learner moves on meanwhile, its answer is dropped.
     const token = round;
+    const slowTimer = setTimeout(() => {
+      if (token === round) slow = true;
+    }, 900);
+    const d = drill;
     const source = code;
     const hintsAtRun = hintsShown;
     const { source: file, lineOffset } = wrapMain(source, d.wholeFile);
@@ -100,9 +102,10 @@
       r = { stdout: "", stderr: `could not start the code runner: ${String(e)}\n`, exitCode: 1, timedOut: false, truncated: false, durationMs: 0 };
     }
     clearTimeout(slowTimer);
+    // A stale answer touches nothing, not even `running`: another run may be in flight.
+    if (token !== round || finished) return;
     slow = false;
     running = false;
-    if (token !== round || finished) return;
 
     const trouble = labTrouble(r.stderr);
     const errors = trouble
@@ -151,6 +154,9 @@
   }
 
   function nextDrill() {
+    // Any run still in flight belongs to the old round and will be dropped.
+    running = false;
+    slow = false;
     idx = (idx + 1) % drills.length;
     code = drills[idx].starter ?? "";
     round++;

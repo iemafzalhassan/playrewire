@@ -134,4 +134,62 @@ describe("TypeStep", () => {
     await fireEvent(area, beforeInput(area, "insertText", "m"));
     expect(typed()).toBe(2);
   });
+
+  describe("IME composition", () => {
+    const keysFor = (ghost: string) => {
+      render(TypeStep, { props: { step: { ghost, tips: [], wholeFile: false }, onDone: vi.fn() } });
+      return screen.getByRole("textbox", { name: /type the code/i }) as HTMLInputElement;
+    };
+    /** One composition update, the way browsers send it: beforeinput, the value changes, input. */
+    async function update(el: HTMLInputElement, text: string) {
+      await fireEvent.keyDown(el, { key: "Process", isComposing: true });
+      await fireEvent(el, beforeInput(el, "insertCompositionText", text));
+      el.value = text;
+      await fireEvent.input(el, { data: text, inputType: "insertCompositionText", isComposing: true });
+    }
+
+    it("composition updates are not applied until compositionend", async () => {
+      const el = keysFor("你好");
+      await fireEvent.compositionStart(el, { data: "" });
+      for (const t of ["n", "ni", "nih"]) {
+        await update(el, t);
+        expect(typed(), t).toBe(0);
+        expect(document.querySelector(".c.bad"), t).toBeNull();
+        expect(el.value, "the field is left alone mid-composition").toBe(t);
+      }
+      await fireEvent.compositionEnd(el, { data: "你" });
+      expect(typed()).toBe(1);
+      expect(document.querySelector(".c.bad")).toBeNull();
+      expect(el.value).toBe("");
+    });
+
+    it("dead-key composition applies the final character once", async () => {
+      const el = keysFor("`raw`");
+      await fireEvent.compositionStart(el, { data: "" });
+      await update(el, "`");
+      expect(typed()).toBe(0);
+      await fireEvent.compositionEnd(el, { data: "`" });
+      expect(typed()).toBe(1);
+      await fireEvent.keyDown(el, { key: "r" });
+      expect(typed()).toBe(2);
+      expect(document.querySelector(".c.bad")).toBeNull();
+    });
+
+    it("input after compositionend does not double-apply", async () => {
+      const el = keysFor("你你");
+      await fireEvent.compositionStart(el, { data: "" });
+      await update(el, "ni");
+      await fireEvent.compositionEnd(el, { data: "你" });
+      // Safari and older Chrome fire one more input after compositionend
+      el.value = "你";
+      await fireEvent.input(el, { data: "你", inputType: "insertText" });
+      expect(typed()).toBe(1);
+      expect(el.value).toBe("");
+      // and the next composition still works
+      await fireEvent.compositionStart(el, { data: "" });
+      await update(el, "ni");
+      await fireEvent.compositionEnd(el, { data: "你" });
+      expect(typed()).toBe(2);
+    });
+  });
 });

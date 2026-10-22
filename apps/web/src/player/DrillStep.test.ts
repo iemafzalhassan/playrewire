@@ -110,10 +110,12 @@ describe("DrillStep", () => {
 
   it("switching drills mid-run discards the old result", async () => {
     let release: (r: RawRunResult) => void = () => {};
+    let releaseB: (r: RawRunResult) => void = () => {};
     const results: (RawRunResult | Promise<RawRunResult>)[] = [
       bad("8:1: undefined: y\n"),
       bad("8:1: undefined: y\n"),
       new Promise<RawRunResult>((r) => (release = r)),
+      new Promise<RawRunResult>((r) => (releaseB = r)),
     ];
     const run = vi.fn(async () => results.shift() ?? ok(""));
     const onDone = vi.fn();
@@ -130,12 +132,24 @@ describe("DrillStep", () => {
     other.removeAttribute("disabled");
     await fireEvent.click(other);
     expect(screen.getByText("Print 2.")).toBeTruthy();
+    expect(runBtn()).toHaveProperty("disabled", false); // the new drill can run straight away
+
+    await fireEvent.click(runBtn()); // drill 2's run is now in flight
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(4));
+    expect(runBtn().textContent).toMatch(/running/);
 
     release(ok("1\n")); // drill 1's answer arrives late
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.getByTestId("drill-result").textContent).not.toContain("✓");
     expect(screen.getByTestId("passes").textContent).toMatch(/0 of 3/);
     expect(onDone).not.toHaveBeenCalled();
+    // the late answer must not re-enable run while drill 2 is still running
+    expect(runBtn()).toHaveProperty("disabled", true);
+    expect(runBtn().textContent).toMatch(/running/);
+
+    releaseB(ok("2\n"));
+    await waitFor(() => expect(screen.getByTestId("drill-result").textContent).toContain("✓"));
+    expect(screen.getByTestId("passes").textContent).toMatch(/1 of 3/);
   });
 
   it("a lab that fails to start does not cost the first try", async () => {

@@ -33,6 +33,10 @@
   let echo: string | null = null;
   /** Set when beforeinput already took this key; a stray input event after it is only cleared. */
   let tookBefore = false;
+  /** An IME (or a dead key) is composing: its in-between text is not typing yet. */
+  let composing = false;
+  /** compositionend already applied the text; an input event right after it is only cleared. */
+  let justComposed = false;
 
   const lines = $derived.by(() => {
     let start = 0;
@@ -100,6 +104,9 @@
   function onBeforeInput(e: InputEvent) {
     tookBefore = false;
     if (PASTES.has(e.inputType)) return stop(e);
+    // Composition can't be cancelled; compositionend applies the result once.
+    if (composing || e.isComposing || /Composition/.test(e.inputType)) return;
+    justComposed = false;
     if (e.inputType === "insertText" || e.inputType === "insertLineBreak" || e.inputType === "insertParagraph" || e.inputType === "deleteContentBackward") {
       e.preventDefault();
       if (e.inputType === "deleteContentBackward") {
@@ -113,11 +120,34 @@
     // Anything else (IME composition) lands in the value and is read on input.
   }
 
-  function onInput() {
+  function onInput(e: Event) {
+    // Mid-composition the field belongs to the IME: clearing it would cancel or restart it.
+    if (composing || (e as InputEvent).isComposing) return;
     const v = field.value;
     field.value = "";
+    if (justComposed) {
+      justComposed = false;
+      tookBefore = false;
+      return;
+    }
     if (v && !tookBefore) applyText(v); // applyText skips a keydown's echo
     tookBefore = false;
+  }
+
+  function onCompositionStart() {
+    composing = true;
+    justComposed = false;
+    echo = null;
+  }
+
+  /** The finished text, applied once, a character at a time. */
+  function onCompositionEnd(e: CompositionEvent) {
+    composing = false;
+    echo = null;
+    tookBefore = false;
+    field.value = "";
+    if (e.data) applyText(e.data);
+    justComposed = true;
   }
 
   /** Linux pastes the selection on middle-click into a real input. */
@@ -128,6 +158,7 @@
   function onKey(e: KeyboardEvent) {
     echo = null;
     tookBefore = false;
+    if (!e.isComposing && e.key !== "Process") justComposed = false;
     if (e.key === "Escape") {
       field.blur();
       return;
@@ -185,6 +216,8 @@
         onkeydown={onKey}
         onbeforeinput={onBeforeInput}
         oninput={onInput}
+        oncompositionstart={onCompositionStart}
+        oncompositionend={onCompositionEnd}
         onpaste={stop}
         ondrop={stop}
         oncontextmenu={stop}
