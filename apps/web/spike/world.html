@@ -16,17 +16,16 @@
       background-size: 7px 7px, 11px 11px;
       background-position: 0 0, 3px 5px;
     }
+    #stage { width: 1280px; height: 720px; }
     #world {
       display: block;
-      width: 1280px;
-      height: 720px;
       background: transparent;
       outline: none;
     }
   </style>
 </head>
 <body>
-  <canvas id="world" width="1280" height="720" aria-label="The PlayRewire street"></canvas>
+  <div id="stage"><canvas id="world" aria-label="The PlayRewire street"></canvas></div>
   <script type="module">
     // Mirror the FPS log line to the static server as a request, so any engine
     // (Playwright Chromium, WebKitGTK MiniBrowser) can be read from the server log.
@@ -66,11 +65,34 @@
         fetch("/__shot", { method: "POST", body: best });
       }, shotAt * 1000);
     }
-    // Swallow winit's "control flow" exception that is used for the event loop.
-    import init from "../public/world/rewire_world.js";
-    init().catch((e) => {
-      if (!String(e).includes("Using exceptions for control flow")) console.error(e);
-    });
+    // Task 16: the world no longer starts itself; start it, then ?mission=green-wave
+    // loads a mission and plays its expected events (a quick look without the app).
+    import init, * as w from "../public/world/rewire_world.js";
+    await init();
+    w.start("world");
+    const q = new URLSearchParams(location.search);
+    const mission = q.get("mission");
+    if (mission) {
+      w.loadMission(mission);
+      const events = mission === "green-wave"
+        ? [0, 1, 2, 3, 4].map((i) => ({ op: "green", i, delay: i * 2 }))
+        : [0, 0, 0, 0, 1, 1, 0, 1].map((b, i) => ({ op: "lamp", i, on: b === 1 }));
+      setTimeout(() => w.applyEvents(JSON.stringify(events)), 1500);
+      if (q.get("ring")) setTimeout(() => w.highlight(JSON.stringify({ kind: mission === "green-wave" ? "light" : "lamp", i: 3 })), 2000);
+    }
+    window.__world = w;
+    // ?report=N: N seconds in, log the canvas backing store vs its CSS size (HiDPI check).
+    const reportAt = Number(q.get("report"));
+    window.__frames = 0;
+    const count = () => { window.__frames++; requestAnimationFrame(count); };
+    requestAnimationFrame(count);
+    if (reportAt > 0) {
+      setTimeout(() => {
+        const c = document.getElementById("world");
+        const r = { w: c.width, h: c.height, cw: c.clientWidth, ch: c.clientHeight, dpr: devicePixelRatio, signals: w.pollSignals(), frames: window.__frames };
+        fetch(`/__lab?hidpi=${encodeURIComponent(JSON.stringify(r))}`).catch(() => {});
+      }, reportAt * 1000);
+    }
   </script>
 </body>
 </html>

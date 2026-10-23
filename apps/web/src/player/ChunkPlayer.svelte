@@ -1,12 +1,11 @@
 <!-- Plays one chunk's steps in order (ruling R6: its `steps`). Each finished
      step becomes a StepRecord -> applyStep -> saveProgress -> rewards. Only
      step outcomes are saved; keys typed and code written never leave here.
-     The Use step (missions) is Task 16, so for now the player stops after
-     Drill and points to the street. -->
+     The Use step walks the hand-inked street to the mission's terminal. -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { Backend } from "../backend/types";
-  import type { Chunk, Step } from "../content/types";
+  import type { Bundle, Chunk, Mission, Step } from "../content/types";
   import { loadBundle, loadTrouble } from "../content/load";
   import { applyStep, initCore, type ProgressState, type Reward, type StepRecord } from "../core";
   import Card from "../lib/Card.svelte";
@@ -17,6 +16,7 @@
   import Rewards from "./Rewards.svelte";
   import SeeStep from "./SeeStep.svelte";
   import TypeStep from "./TypeStep.svelte";
+  import UseStep from "./UseStep.svelte";
 
   let {
     chunk,
@@ -35,16 +35,14 @@
     warm?: boolean;
   } = $props();
 
-  type Playable = Exclude<Step, "use">;
-  const playable = $derived(chunk.steps.filter((s): s is Playable => s !== "use"));
-  const hasUse = $derived(chunk.steps.includes("use"));
+  type Playable = Step;
+  const playable = $derived(chunk.steps);
   const done = (s: Step) => progress.completed.includes(`${chunk.id}:${s}`);
 
-  /** Where to begin: the first step not done; a finished page waits on the street; else replay. */
+  /** Where to begin: the first step not done; a finished page plays again from the top. */
   function startAt(): number | "finished" {
     const i = playable.findIndex((s) => !done(s));
-    if (i >= 0) return i;
-    return hasUse && !done("use") ? "finished" : 0;
+    return i >= 0 ? i : 0;
   }
 
   let at = $state<number | "finished">(untrack(startAt));
@@ -53,6 +51,10 @@
   let saving = $state(false);
   let trouble = $state<{ title: string; text: string } | null>(null);
   let drillReady = $state(false);
+  let bundle = $state<Bundle | null>(null);
+  const mission = $derived<Mission | undefined>(
+    bundle?.packs.find((p) => p.id === chunk.pack)?.missions.find((m) => m.id === chunk.mission),
+  );
 
   const current = $derived(at === "finished" ? null : playable[at]);
 
@@ -60,7 +62,8 @@
   async function prepareDrill() {
     trouble = null;
     try {
-      await Promise.all([initCore(), loadBundle()]);
+      const [, b] = await Promise.all([initCore(), loadBundle()]);
+      bundle = b;
       drillReady = true;
     } catch (e) {
       console.error(e);
@@ -70,9 +73,9 @@
 
   let warmed = false;
   $effect(() => {
-    if (current === "drill" && !drillReady) untrack(prepareDrill);
+    if ((current === "drill" || current === "use") && !drillReady) untrack(prepareDrill);
     // Wake the browser lab while the learner is busy, so the first run is quick.
-    if (warm && !warmed && backend.kind === "web" && (current === "type" || current === "drill")) {
+    if (warm && !warmed && backend.kind === "web" && (current === "type" || current === "drill" || current === "use")) {
       warmed = true;
       backend
         .run([{ name: "main.go", source: 'package main\n\nfunc main() {}\n' }])
@@ -99,7 +102,7 @@
       chunk_id: chunk.id,
       concept: chunk.concept,
       step,
-      mission_id: null,
+      mission_id: step === "use" ? (chunk.mission ?? null) : null,
       success: true,
       first_try: outcome.firstTry,
       hints_used: outcome.hintsUsed,
@@ -133,6 +136,7 @@
     see: { title: "watch", label: "see" },
     type: { title: "type it", label: "type" },
     drill: { title: "from memory", label: "drill" },
+    use: { title: "light up the city", label: "street" },
   };
   const nextLabel = (i: number) => {
     const n = playable[i + 1];
@@ -160,9 +164,6 @@
           <span class="sr-only">{st === "done" ? "(done)" : st === "now" ? "(now)" : ""}</span>
         </li>
       {/each}
-      {#if hasUse}
-        <li class="later street"><span class="dot" aria-hidden="true">{playable.length + 1}</span><span>street</span><span class="sr-only">(coming soon)</span></li>
-      {/if}
     </ol>
   </header>
 
@@ -180,13 +181,28 @@
     <SeeStep see={chunk.see} nextLabel={nextLabel(at as number)} onDone={() => finish("see", { firstTry: true, hintsUsed: 0 })} />
   {:else if current === "type" && chunk.type}
     <TypeStep step={chunk.type} nextLabel={nextLabel(at as number)} onDone={(r) => finish("type", { firstTry: r.mistakes === 0, hintsUsed: 0 })} />
-  {:else if current === "drill"}
+  {:else if current === "drill" || current === "use"}
     {#if trouble}
       <Card edge="b" tilt={-0.5} class="trouble" role="alert">
         <p class="t-title"><span aria-hidden="true">✗</span> {trouble.title}</p>
         <p>{trouble.text}</p>
         <InkButton onclick={prepareDrill}>try again</InkButton>
       </Card>
+    {:else if drillReady && current === "use"}
+      {#if mission && bundle}
+        <UseStep
+          {mission}
+          cityStub={bundle.cityStub}
+          {progress}
+          hints={chunk.hints}
+          run={(files) => backend.run(files)}
+          nextLabel={nextLabel(at as number)}
+          onDone={(r) => finish("use", r, false)}
+          onContinue={next}
+        />
+      {:else}
+        <p class="hush">This page's street isn't drawn yet.</p>
+      {/if}
     {:else if drillReady}
       <DrillStep
         drills={chunk.drills}
@@ -207,12 +223,6 @@
           <span id="done-title">Page done!</span>
         </h2>
         <p>{chunk.title}: {playable.map((s) => stepWords[s].label).join(", ")}. All yours now.</p>
-        {#if hasUse}
-          <p class="street-note">
-            <Icon name="map" size={22} /> next: the street. Your code will light up the city soon. That part is still being
-            drawn.
-          </p>
-        {/if}
         <div class="done-actions">
           <InkButton primary onclick={onHome}>back to today <Icon name="arrow" size={28} /></InkButton>
           <InkButton onclick={() => ((at = 0), (rewards = []))}><Icon name="replay" size={22} /> play it again</InkButton>
@@ -363,18 +373,6 @@
   }
   .tick {
     color: var(--ok);
-  }
-  .street-note {
-    display: inline-flex;
-    gap: var(--space-2);
-    align-items: center;
-    padding: var(--space-2) var(--space-3);
-    background: color-mix(in srgb, var(--highlight) 35%, transparent);
-    font-family: var(--font-display);
-    font-size: var(--size-hand-sm);
-    line-height: 1.2;
-    text-align: left;
-    transform: rotate(-0.6deg);
   }
   .done-actions {
     display: flex;

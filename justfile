@@ -36,6 +36,7 @@ wasm: wasm-world wasm-lab wasm-core
 
 # Bevy street -> apps/web/public/world/ (rewire_world.js + rewire_world_bg.wasm).
 wasm-world:
+    @test "$(wasm-bindgen --version)" = "wasm-bindgen $(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p')" || { echo "wasm-bindgen CLI $(wasm-bindgen --version) does not match the crate in Cargo.lock"; exit 1; }
     CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo build -p rewire-world --target wasm32-unknown-unknown --release
     wasm-bindgen --target web --out-dir apps/web/public/world target/wasm32-unknown-unknown/release/rewire_world.wasm
 
@@ -59,13 +60,14 @@ content:
 packcheck-fixture:
     cd tools/packcheck && UPDATE_BUNDLE=1 go test -count=1 -run TestGoodBundleIsNotStale ./...
 
-# Build the web prerequisites that are missing (lab.wasm, core wasm, lesson bundle).
+# Build the web prerequisites that are missing (lab.wasm, core wasm, lesson bundle, street).
 web-prereqs:
     #!/usr/bin/env bash
     set -euo pipefail
     [ -f apps/web/public/lab/lab.wasm ] && [ -f apps/web/public/lab/wasm_exec.js ] || just wasm-lab
     [ -f apps/web/src/core/pkg/rewire_core_wasm_bg.wasm ] || just wasm-core
     [ -f apps/web/public/content/go.json ] || just content
+    [ -f apps/web/public/world/rewire_world_bg.wasm ] || just wasm-world
 
 # Vite dev server for the web app (http://localhost:5173).
 dev-web: web-prereqs

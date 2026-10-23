@@ -6613,6 +6613,9 @@ name = "rewire-world"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "rewire-core",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
 ]
 

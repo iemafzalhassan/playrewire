@@ -54,16 +54,34 @@ pub struct InkOutline {
     pub ink: Vec4,
     /// xyz: direction *towards* the light (world space). w: shade multiplier for the dark band.
     pub light: Vec4,
-    /// x: relative depth threshold, y: normal dot threshold, z: sample offset in px, w: unused.
+    /// x: depth crease threshold, y: normal dot threshold, z: sample offset in px,
+    /// w: hatch spacing in px.
     pub params: Vec4,
+    /// x: line wobble amplitude (px), y: wobble frequency (1/px), z: boil seed (changes
+    /// every `motion.boil-step` unless motion is reduced), w: paper grain strength.
+    pub wobble: Vec4,
+}
+
+impl InkOutline {
+    /// Line width and hatch spacing follow the device pixel ratio, so a HiDPI canvas
+    /// (backing store = CSS size x DPR) gets the same pen as a 1x one.
+    pub fn for_scale(mut self, scale: f32) -> Self {
+        let s = scale.clamp(1.0, 3.0);
+        self.params.z = (1.5 * s).round().max(1.0);
+        self.params.w = 6.0 * s;
+        self.wobble.x = 1.2 * s;
+        self.wobble.y = 0.035 / s;
+        self
+    }
 }
 
 impl Default for InkOutline {
     fn default() -> Self {
         Self {
             ink: ink_color().to_vec4(),
-            light: Vec3::new(0.45, 0.8, 0.35).normalize().extend(0.72),
-            params: Vec4::new(0.04, 0.75, 2.0, 0.0),
+            light: Vec3::new(0.45, 0.8, 0.35).normalize().extend(0.8),
+            params: Vec4::new(0.02, 0.75, 2.0, 6.0),
+            wobble: Vec4::new(1.2, 0.035, 0.0, 0.06),
         }
     }
 }

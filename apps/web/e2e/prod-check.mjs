@@ -5,6 +5,9 @@
 //  2. The app shell renders Home and Map with no CSP violations or page errors.
 //  3. The chunk player: the first coding chunk end to end (See, type the ghost,
 //     three drills run as real Go by the browser lab) and its ✓ rewards.
+//  4. The Use step in the 3D street (Bevy wasm, WebGL2) under the CSP: both missions
+//     walked with the keyboard, a wrong run (ink circle + caption) then a right one,
+//     the canvas filling its box at DPR 1 and 2, and the no-GPU sketch street.
 // With --shots it also writes review screenshots to docs/design/.
 //
 // Usage: pnpm e2e [-- --shots]   (needs public/lab, public/content, src/core/pkg)
@@ -143,6 +146,183 @@ try {
     outbox.some((r) => r.chunk_id === firstCoding.id && r.step === "drill" && r.success && /^\d{4}-\d\d-\d\d$/.test(r.local_date)),
     "player: the drill step is saved to the outbox",
   );
+
+  // 4. The Use step: the street, both missions, as a learner would play them.
+  const out = fileURLToPath(new URL("../../../docs/design/", import.meta.url));
+  if (shots) mkdirSync(out, { recursive: true });
+  const snap = async (p, name) => {
+    if (!shots) return;
+    await p.screenshot({ path: `${out}${name}.png` });
+    console.log(`shot docs/design/${name}.png`);
+  };
+  const seeded = (chunk) => ({
+    xp: 120,
+    streak: { current: 2, best: 2, last_day: null, freezes: 0 },
+    concepts: {},
+    completed: ["see", "type", "drill"].map((s) => `${chunk}:${s}`),
+    mission_encounters: {},
+  });
+  const missions = [
+    {
+      pack: "go-academy",
+      chunk: "for-loop",
+      id: "green-wave",
+      // Spawn (-17, 0.6): up to the far kerb, then right until the terminal (-12, -3.5) is in reach.
+      walk: ["ArrowUp", "ArrowRight"],
+      wrong: "for i := 0; i < 5; i++ {\n    SetGreen(i, i*3)\n}",
+      caption: "Light 1 turned green at the wrong time.",
+      right: "for i := 0; i < 5; i++ {\n    SetGreen(i, i*2)\n}",
+    },
+    {
+      pack: "silicon-quarter",
+      chunk: "binary-bridge",
+      id: "binary-bridge",
+      // Spawn (2, 0.6), terminal at (7.6, -3.5): the same walk with W and D.
+      walk: ["KeyW", "KeyD"],
+      wrong: 'bits := fmt.Sprintf("%08b", 12)\nfor i := 0; i < 8; i++ {\n    Lamp(i, bits[i] == \'1\')\n}',
+      caption: "Lamp 7 should be on.",
+      right: 'bits := fmt.Sprintf("%08b", 13)\nfor i := 0; i < 8; i++ {\n    Lamp(i, bits[i] == \'1\')\n}',
+    },
+  ];
+  const write = async (p, code) => {
+    await p.getByRole("textbox", { name: /your go code/i }).click();
+    await p.keyboard.press("ControlOrMeta+a");
+    await p.keyboard.insertText(code);
+  };
+  for (const m of missions) {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
+    await c.addInitScript((seed) => {
+      window.__csp = [];
+      document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+      localStorage.setItem("rewire.progress.v1", JSON.stringify(seed));
+    }, seeded(m.chunk));
+    const p = await c.newPage();
+    const errs = [];
+    p.on("pageerror", (e) => errs.push(String(e)));
+    await p.goto(`${base}/#/learn/${m.pack}/${m.chunk}`);
+    await p.locator(".use-step .hud").waitFor({ timeout: 60_000 });
+    const fill = await p.evaluate(() => {
+      const c = document.querySelector(".use-step .world canvas");
+      return c && { w: c.width, h: c.height, cw: c.clientWidth, ch: c.clientHeight };
+    });
+    check(
+      !!fill && Math.abs(fill.w - fill.cw) <= 1 && Math.abs(fill.h - fill.ch) <= 1 && fill.cw > 600,
+      `${m.id}: the 3D street fills its box ${JSON.stringify(fill)}`,
+    );
+    // Walk there with the keyboard, like a learner: click the street to focus it, then keys.
+    await p.locator(".use-step .world canvas").focus();
+    // Software GL in CI draws few frames and Bevy caps each frame's step, so walk
+    // "until there" rather than for a fixed time.
+    const prompt = p.getByRole("button", { name: /use the terminal/i });
+    const [up, right] = m.walk;
+    await p.keyboard.down(up);
+    await p.waitForTimeout(2500); // the kerb stops the player
+    await p.keyboard.up(up);
+    await p.keyboard.down(right);
+    const near = await prompt.waitFor({ timeout: 20_000 }).then(() => true, () => false);
+    await p.keyboard.up(right);
+    check(near, `${m.id}: walking up to the terminal shows the prompt`);
+    await p.waitForTimeout(400);
+    if (m.id === "green-wave") await snap(p, "street-terminal-prompt");
+    await p.keyboard.press("e");
+    const opened = await p.getByRole("textbox", { name: /your go code/i }).waitFor({ timeout: 5000 }).then(() => true, () => false);
+    check(opened, `${m.id}: E at the terminal opens the editor`);
+    if (!opened) await p.getByRole("button", { name: /go to the terminal|use the terminal/i }).click();
+    const template = await p.getByRole("textbox", { name: /your go code/i }).textContent();
+    check(template.includes("___"), `${m.id}: the first encounter fills one blank`);
+
+    await write(p, m.wrong);
+    await p.getByRole("button", { name: /^run/i }).click();
+    await p.locator(".wrong-card").waitFor({ timeout: 60_000 });
+    const caption = await p.locator(".wrong-card .verdict").textContent();
+    check(caption.includes(m.caption) && caption.includes("✗"), `${m.id}: wrong run says "${caption.trim()}"`);
+    await p.waitForTimeout(900); // the ink circle draws itself
+    await snap(p, m.id === "green-wave" ? "street-wrong-light" : "street-wrong-lamp");
+
+    await write(p, m.right);
+    await p.getByRole("button", { name: /^run/i }).click();
+    if (m.id === "green-wave") {
+      await p.getByText("Watch the street…").waitFor({ timeout: 60_000 });
+      await p.waitForTimeout(650); // lights 0 and 1 are green, 2 is about to go
+      await snap(p, "street-green-wave");
+    }
+    await p.locator(".pass-card").waitFor({ timeout: 60_000 });
+    check((await p.locator(".pass-card").textContent()).includes("✓"), `${m.id}: a right run passes with ✓`);
+    await p.waitForTimeout(1500);
+    if (m.id === "binary-bridge") await snap(p, "street-bridge-13");
+    const box = await p.evaluate(() => JSON.parse(localStorage.getItem("rewire.outbox.v1") ?? "[]"));
+    check(
+      box.some((r) => r.chunk_id === m.chunk && r.step === "use" && r.mission_id === m.id && r.success),
+      `${m.id}: the use step is saved with its mission id`,
+    );
+    await p.getByRole("button", { name: /finish|next/i }).first().click();
+    await p.getByText("Page done!").waitFor();
+    const csp = await p.evaluate(() => window.__csp);
+    check(csp.length === 0 && errs.length === 0, `${m.id}: no CSP violations or page errors ${JSON.stringify([...csp, ...errs])}`);
+    await c.close();
+  }
+
+  // HiDPI: the backing store is CSS size x devicePixelRatio (the WebKitGTK quarter-window
+  // bug). Playwright's emulated deviceScaleFactor reports devicePixelContentBoxSize in CSS
+  // px, so this uses a browser with a real device scale factor of 2.
+  {
+    const hidpi = await chromium.launch({ args: ["--force-device-scale-factor=2"] });
+    const c = await hidpi.newContext({ viewport: { width: 1100, height: 800 } });
+    await c.addInitScript((seed) => localStorage.setItem("rewire.progress.v1", JSON.stringify(seed)), seeded("for-loop"));
+    const p = await c.newPage();
+    await p.goto(`${base}/#/learn/go-academy/for-loop`);
+    await p.locator(".use-step .hud").waitFor({ timeout: 60_000 });
+    await p.waitForTimeout(500);
+    const r = await p.evaluate(() => {
+      const c = document.querySelector(".use-step .world canvas");
+      return { w: c.width, h: c.height, cw: c.clientWidth, ch: c.clientHeight };
+    });
+    check(Math.abs(r.w - r.cw * 2) <= 2 && Math.abs(r.h - r.ch * 2) <= 2, `HiDPI: canvas backing store is CSS x DPR ${JSON.stringify(r)}`);
+    // And it follows a resize.
+    await p.setViewportSize({ width: 800, height: 700 });
+    // Software GL at 2x draws slowly: give the next frame time to land.
+    await p
+      .waitForFunction(() => {
+        const c = document.querySelector(".use-step .world canvas");
+        return Math.abs(c.width - c.clientWidth * 2) <= 2 && Math.abs(c.height - c.clientHeight * 2) <= 2;
+      }, null, { timeout: 15_000 })
+      .catch(() => {});
+    const r2 = await p.evaluate(() => {
+      const c = document.querySelector(".use-step .world canvas");
+      return { w: c.width, h: c.height, cw: c.clientWidth, ch: c.clientHeight };
+    });
+    check(Math.abs(r2.w - r2.cw * 2) <= 2 && Math.abs(r2.h - r2.ch * 2) <= 2, `HiDPI: still filled after a resize ${JSON.stringify(r2)}`);
+    await c.close();
+    await hidpi.close();
+  }
+
+  // No GPU: the sketch street, same mission, same captions.
+  {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+    await c.addInitScript((seed) => {
+      const get = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (kind, ...rest) {
+        return kind === "webgl2" ? null : get.call(this, kind, ...rest);
+      };
+      localStorage.setItem("rewire.progress.v1", JSON.stringify(seed));
+    }, seeded("for-loop"));
+    const p = await c.newPage();
+    await p.goto(`${base}/#/learn/go-academy/for-loop`);
+    await p.getByRole("img", { name: /dock st/i }).waitFor({ timeout: 30_000 });
+    check((await p.locator(".use-step canvas").count()) === 0, "no GPU: the sketch street stands in");
+    await p.getByRole("button", { name: /go to the terminal/i }).click();
+    await write(p, missions[0].wrong);
+    await p.getByRole("button", { name: /^run/i }).click();
+    await p.locator(".wrong-card").waitFor({ timeout: 60_000 });
+    check((await p.locator(".sketch .ring").count()) === 1, "no GPU: the wrong light is circled");
+    await snap(p, "street-no-gpu-fallback");
+    await write(p, missions[0].right);
+    await p.getByRole("button", { name: /^run/i }).click();
+    await p.locator(".pass-card").waitFor({ timeout: 60_000 });
+    const label = await p.getByRole("img", { name: /dock st/i }).getAttribute("aria-label");
+    check(label.includes("Green: 0, 1, 2, 3, 4"), `no GPU: the mission passes and the sketch shows it (${label})`);
+    await c.close();
+  }
 
   const appCsp = await page.evaluate(() => window.__csp);
   check(appCsp.length === 0, `app: no CSP violations${appCsp.length ? ": " + appCsp.join(" | ") : ""}`);
