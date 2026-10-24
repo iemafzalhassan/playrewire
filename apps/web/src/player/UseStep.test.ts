@@ -50,10 +50,14 @@ const hints = ["A loop starts with for.", "Start at 0, stop before 5.", "Use i i
 const ok = (stdout: string): RawRunResult => ({ stdout, stderr: "", exitCode: 0, timedOut: false, truncated: false, durationMs: 5 });
 const city = (delays: number[]) => delays.map((d, i) => `@city {"op":"green","i":${i},"delay":${d}}\n`).join("");
 
-function setup(encounters: number, results: RawRunResult[] = []) {
+function setup(encounters: number, results: (RawRunResult | Error)[] = [], onMiss = vi.fn()) {
   const progress: ProgressState = { ...emptyProgress(), mission_encounters: encounters ? { "green-wave": encounters } : {} };
   const world = new FakeWorld();
-  const run = vi.fn(async () => results.shift() ?? ok(""));
+  const run = vi.fn(async () => {
+    const r = results.shift() ?? ok("");
+    if (r instanceof Error) throw r;
+    return r;
+  });
   const onDone = vi.fn();
   render(UseStep, {
     props: {
@@ -63,10 +67,11 @@ function setup(encounters: number, results: RawRunResult[] = []) {
       hints,
       run,
       onDone,
+      onMiss,
       openWorld: async () => world,
     },
   });
-  return { world, run, onDone };
+  return { world, run, onDone, onMiss };
 }
 
 /** Walk up and press E: the fake world says the player used the terminal. */
@@ -154,5 +159,32 @@ describe("UseStep", () => {
     expect(await screen.findByRole("img", { name: /dock st/i })).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: /go to the terminal/i }));
     expect(await screen.findByRole("textbox", { name: /your go code/i })).toBeTruthy();
+  });
+
+  it("use step saves one failure on wrong events", async () => {
+    // No events, then wrong events: one miss for the attempt; the blank nudge isn't one.
+    const { world, run, onMiss } = setup(0, [ok("hi\n"), ok(city([0, 3, 4, 6, 8]))]);
+    await useTerminal(world);
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    expect(await screen.findByText(/fill in the blank/i)).toBeTruthy();
+    expect(onMiss).not.toHaveBeenCalled();
+    setCode('fmt.Println("hi")');
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    expect(await screen.findByText("Nothing lit up. Did your code call SetGreen?")).toBeTruthy();
+    expect(onMiss).toHaveBeenCalledExactlyOnceWith({ hintsUsed: 0 });
+    setCode("for i := 0; i < 5; i++ {\n    SetGreen(i, i*3)\n}\n");
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    expect(await screen.findByText("Light 1 turned green at the wrong time.")).toBeTruthy();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(onMiss).toHaveBeenCalledOnce();
+  });
+
+  it("lab start failure in the street is not recorded as a miss", async () => {
+    const { world, onMiss } = setup(1, [new Error("ipc gone")]);
+    await useTerminal(world);
+    setCode(greenWave.levels.fillBlank.solution);
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    await screen.findByText(/not yet/i);
+    expect(onMiss).not.toHaveBeenCalled();
   });
 });

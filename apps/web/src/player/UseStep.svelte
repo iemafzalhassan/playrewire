@@ -41,6 +41,7 @@
     nextLabel = "finish",
     openWorld,
     mentor = null,
+    onMiss = () => {},
   }: {
     mission: Mission;
     cityStub: string;
@@ -56,7 +57,17 @@
     openWorld?: Opener;
     /** The AI mentor (desktop) or null for built-in hints only. */
     mentor?: Pick<Backend, "kind" | "mentorAvailable" | "mentorHint"> | null;
+    /** The first failed run of this attempt (a Go error, wrong events or no events;
+     *  never a lab that failed to start). Once per attempt. */
+    onMiss?: (r: { hintsUsed: number }) => void;
   } = $props();
+
+  let missed = false;
+  function miss() {
+    if (missed) return;
+    missed = true;
+    onMiss({ hintsUsed: helpUsed });
+  }
 
   const level = untrack(() => helpLevel(progress, mission.id));
   const lv = untrack(() => templateFor(mission, level));
@@ -261,7 +272,10 @@
       running = false;
       result = { kind: "error", errors };
       if (!trouble && firstRun === null) firstRun = false;
-      if (!trouble) lastError = errors.map((e) => e.raw.trim() || `${e.title}. ${e.plain}`).join("\n");
+      if (!trouble) {
+        lastError = errors.map((e) => e.raw.trim() || `${e.title}. ${e.plain}`).join("\n");
+        miss();
+      }
       return show();
     }
 
@@ -285,6 +299,7 @@
       view.highlight(caption.target);
       result = { kind: "wrong", caption };
       lastError = `It ran, but the street went wrong: ${caption.text}`;
+      miss();
     }
     return show();
   }

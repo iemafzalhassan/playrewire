@@ -7,14 +7,14 @@
   import type { Backend } from "../backend/types";
   import type { Bundle, Chunk, Mission, Step } from "../content/types";
   import { loadBundle, loadTrouble } from "../content/load";
-  import { applyStep, initCore, type ProgressState, type Reward, type StepRecord } from "../core";
+  import { initCore, type ProgressState, type Reward } from "../core";
   import Card from "../lib/Card.svelte";
   import DayTrack from "../lib/DayTrack.svelte";
   import type { DayPart } from "../today";
   import Icon from "../lib/Icon.svelte";
   import InkButton from "../lib/InkButton.svelte";
   import DrillStep from "./DrillStep.svelte";
-  import { localDate } from "./drill";
+  import { saveQueue, stepRecord } from "./record";
   import Rewards from "./Rewards.svelte";
   import SeeStep from "./SeeStep.svelte";
   import TypeStep from "./TypeStep.svelte";
@@ -105,32 +105,25 @@
   $effect(() => () => clearTimeout(rewardTimer));
 
   /** Record a finished step; `advance` false keeps the step on screen until the learner moves on. */
+  // Every save goes through one queue applied to the latest state, so a failed
+  // round saved just before the pass that follows it is never lost.
+  const saves = untrack(() => saveQueue(progress, backend, (s) => onProgress(s)));
+  const record = (step: Playable, outcome: { success: boolean; firstTry: boolean; hintsUsed: number }) =>
+    saves.save(stepRecord(chunk.id, chunk.concept, outcome, step, step === "use" ? (chunk.mission ?? null) : null));
+
+  /** The first miss of a drill round or a street attempt: the concept goes back to box 0. */
+  function missed(step: Playable, r: { hintsUsed: number }) {
+    record(step, { success: false, firstTry: false, hintsUsed: r.hintsUsed });
+  }
+
   async function finish(step: Playable, outcome: { firstTry: boolean; hintsUsed: number }, advance = true) {
     if (saving) return;
     saving = true;
-    const rec: StepRecord = {
-      chunk_id: chunk.id,
-      concept: chunk.concept,
-      step,
-      mission_id: step === "use" ? (chunk.mission ?? null) : null,
-      success: true,
-      first_try: outcome.firstTry,
-      hints_used: outcome.hintsUsed,
-      local_date: localDate(),
-    };
-    try {
-      await initCore();
-      const out = applyStep(progress, rec);
-      await backend.saveProgress(out.state, rec);
-      onProgress(out.state);
-      showRewards(out.rewards);
-    } catch (e) {
-      // The web backend already handles storage trouble; anything else should
-      // not trap the learner on a finished step.
-      console.error("could not save the step", e);
-    } finally {
-      saving = false;
-    }
+    // recordStep never throws: storage trouble is handled and logged, so no
+    // learner is trapped on a finished step.
+    const out = await record(step, { success: true, ...outcome });
+    if (out) showRewards(out.rewards);
+    saving = false;
     if (advance) await next();
   }
 
@@ -210,6 +203,7 @@
           run={(files) => backend.run(files)}
           nextLabel={nextLabel(at as number)}
           onDone={(r) => finish("use", r, false)}
+          onMiss={(r) => missed("use", r)}
           onContinue={next}
         />
       {:else}
@@ -224,6 +218,7 @@
         run={(files) => backend.run(files)}
         nextLabel={nextLabel(at as number)}
         onDone={(r) => finish("drill", r, false)}
+        onMiss={(r) => missed("drill", r)}
         onContinue={next}
       />
     {:else}

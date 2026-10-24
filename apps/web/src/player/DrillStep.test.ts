@@ -197,4 +197,40 @@ describe("DrillStep", () => {
       await screen.findByText("Rewire couldn't start its safe practice space on this system. See docs: Linux sandbox setup."),
     ).toBeTruthy();
   });
+
+  it("lab start failure is not recorded as a miss", async () => {
+    const onMiss = vi.fn();
+    const results = [bad("could not start the code runner: Error: worker error\n")];
+    const run = vi.fn(async () => {
+      const r = results.shift();
+      if (!r) throw new Error("ipc gone");
+      return r;
+    });
+    render(DrillStep, { props: { drills, hints, run, onDone: vi.fn(), onMiss } });
+    await fireEvent.click(runBtn());
+    expect(await screen.findByText("The Go lab didn't start")).toBeTruthy();
+    await waitFor(() => expect((runBtn() as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(runBtn()); // the run itself throws
+    await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(onMiss).not.toHaveBeenCalled();
+  });
+
+  it("a miss is reported once per drill round", async () => {
+    const onMiss = vi.fn();
+    const run = vi.fn(async () => ok("nope\n"));
+    render(DrillStep, { props: { drills, hints, run, onDone: vi.fn(), onMiss } });
+    for (let i = 0; i < 2; i++) {
+      await fireEvent.click(runBtn());
+      await waitFor(() => expect(run).toHaveBeenCalledTimes(i + 1));
+      await waitFor(() => expect((runBtn() as HTMLButtonElement).disabled).toBe(false));
+    }
+    expect(onMiss).toHaveBeenCalledOnce();
+    expect(onMiss).toHaveBeenCalledWith({ hintsUsed: 0 });
+    await fireEvent.click(screen.getByRole("button", { name: /try a different one/i }));
+    await fireEvent.click(screen.getByRole("button", { name: /hint/i }));
+    await fireEvent.click(runBtn());
+    await waitFor(() => expect(onMiss).toHaveBeenCalledTimes(2));
+    expect(onMiss).toHaveBeenLastCalledWith({ hintsUsed: 1 });
+  });
 });

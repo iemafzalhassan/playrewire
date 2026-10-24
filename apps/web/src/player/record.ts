@@ -11,12 +11,14 @@ export function stepRecord(
   chunkId: string,
   concept: string,
   outcome: { success: boolean; firstTry: boolean; hintsUsed: number },
+  step: StepRecord["step"] = "drill",
+  missionId: string | null = null,
 ): StepRecord {
   return {
     chunk_id: chunkId,
     concept,
-    step: "drill",
-    mission_id: null,
+    step,
+    mission_id: missionId,
     success: outcome.success,
     first_try: outcome.firstTry,
     hints_used: outcome.hintsUsed,
@@ -39,4 +41,28 @@ export async function recordStep(
     console.error("could not save the step", e);
     return null;
   }
+}
+
+/**
+ * Saves records one after another, each applied to the state the previous one
+ * produced. A failed round saved just before the pass that follows it can't race
+ * on a stale state and lose the failure.
+ */
+export function saveQueue(start: ProgressState, backend: Saver, onSaved: (s: ProgressState) => void) {
+  let latest = start;
+  let queue: Promise<unknown> = Promise.resolve();
+  return {
+    save(rec: StepRecord): Promise<{ state: ProgressState; rewards: Reward[] } | null> {
+      const done = queue.then(async () => {
+        const out = await recordStep(latest, rec, backend);
+        if (out) {
+          latest = out.state;
+          onSaved(out.state);
+        }
+        return out;
+      });
+      queue = done;
+      return done;
+    },
+  };
 }

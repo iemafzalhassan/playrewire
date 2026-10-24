@@ -13,7 +13,7 @@
   import Icon from "../lib/Icon.svelte";
   import InkButton from "../lib/InkButton.svelte";
   import DrillStep from "./DrillStep.svelte";
-  import { recordStep, stepRecord } from "./record";
+  import { saveQueue, stepRecord } from "./record";
   import RewardSlot from "./RewardSlot.svelte";
 
   let {
@@ -52,9 +52,8 @@
 
   let at = $state(0);
   let slot: RewardSlot;
-  /** Latest state: records are chained so a slip and the pass after it never race. */
-  let latest = untrack(() => progress);
-  let queue: Promise<unknown> = Promise.resolve();
+  /** Records are chained on the latest state, so a slip and the pass after it never race. */
+  const saves = untrack(() => saveQueue(progress, backend, (s) => onProgress(s)));
   const missed = new Set<number>();
 
   const item = $derived(list[at]);
@@ -62,19 +61,15 @@
 
   function save(i: number, outcome: { success: boolean; firstTry: boolean; hintsUsed: number }) {
     const { chunk } = list[i];
-    queue = queue.then(async () => {
-      const out = await recordStep(latest, stepRecord(chunk.id, chunk.concept, outcome), backend);
-      if (!out) return;
-      latest = out.state;
-      onProgress(out.state);
-      if (outcome.success) slot?.show(out.rewards);
+    saves.save(stepRecord(chunk.id, chunk.concept, outcome)).then((out) => {
+      if (out && outcome.success) slot?.show(out.rewards);
     });
   }
 
-  function miss(i: number) {
+  function miss(i: number, hintsUsed: number) {
     if (missed.has(i)) return;
     missed.add(i);
-    save(i, { success: false, firstTry: false, hintsUsed: 0 });
+    save(i, { success: false, firstTry: false, hintsUsed });
   }
 
   async function onward() {
@@ -118,7 +113,7 @@
         doneWords="Still got it!"
         run={(files) => backend.run(files)}
         nextLabel={last ? doneLabel : "next warm-up"}
-        onMiss={() => miss(at)}
+        onMiss={(r) => miss(at, r.hintsUsed)}
         onDone={(r) => save(at, { success: true, firstTry: r.firstTry, hintsUsed: r.hintsUsed })}
         onContinue={onward}
       />

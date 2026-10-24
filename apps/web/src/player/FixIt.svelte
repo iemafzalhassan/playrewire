@@ -11,7 +11,7 @@
   import DayTrack from "../lib/DayTrack.svelte";
   import Icon from "../lib/Icon.svelte";
   import DrillStep from "./DrillStep.svelte";
-  import { recordStep, stepRecord } from "./record";
+  import { saveQueue, stepRecord } from "./record";
   import RewardSlot from "./RewardSlot.svelte";
 
   let {
@@ -44,13 +44,17 @@
     : null;
   const mentor = untrack(() => (backend.mentorHint && backend.mentorAvailable ? (backend as Required<typeof backend>) : null));
   let slot: RewardSlot;
+  const saves = untrack(() => saveQueue(progress, backend, (s) => onProgress(s)));
+  const fixId = untrack(() => `${chunk.id}${FIX_SUFFIX}`);
+
+  /** The first miss (once; DrillStep calls it once per round and the fix-it has one round). */
+  function missed(r: { hintsUsed: number }) {
+    saves.save(stepRecord(fixId, chunk.concept, { success: false, firstTry: false, hintsUsed: r.hintsUsed }));
+  }
 
   async function fixed(r: { firstTry: boolean; hintsUsed: number }) {
-    const rec = stepRecord(`${chunk.id}${FIX_SUFFIX}`, chunk.concept, { success: true, ...r });
-    const out = await recordStep(progress, rec, backend);
-    if (!out) return;
-    onProgress(out.state);
-    slot?.show(out.rewards);
+    const out = await saves.save(stepRecord(fixId, chunk.concept, { success: true, ...r }));
+    if (out) slot?.show(out.rewards);
   }
 </script>
 
@@ -82,6 +86,7 @@
       run={(files) => backend.run(files)}
       nextLabel={doneLabel}
       onDone={fixed}
+      onMiss={missed}
       onContinue={onDone}
     />
   {:else}

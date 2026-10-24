@@ -46,8 +46,9 @@
     mentor?: Pick<Backend, "kind" | "mentorAvailable" | "mentorHint"> | null;
     /** Passes in a row that finish the step: 3 for a page's drill, 1 for a warm-up or fix-it. */
     needed?: number;
-    /** A run of the learner's code that failed (a Go error or the wrong output). */
-    onMiss?: () => void;
+    /** The first failed run of the learner's code in a drill round (a Go error or the
+     *  wrong output; never a lab that failed to start). Once per round. */
+    onMiss?: (r: { hintsUsed: number }) => void;
     /** Show the output the program should print (the fix-it task). */
     showWant?: boolean;
     doneWords?: string;
@@ -197,7 +198,7 @@
     } else {
       passes = 0;
       missesHere++;
-      onMiss();
+      if (missesHere === 1) onMiss({ hintsUsed: helpUsed });
     }
     if (passes >= NEEDED) {
       finished = true;
@@ -217,6 +218,8 @@
     round++;
     result = null;
     missesHere = 0;
+    attempt = 0;
+    lastError = null;
     startedAt = Date.now();
     now = startedAt;
     stoppedAt = null;
@@ -289,7 +292,9 @@
     <p class="slow" role="status">Starting Go… the first run takes a few seconds.</p>
   {/if}
 
-  <MentorPanel {mentor} {hints} request={hintRequest} onHelp={() => helpUsed++} active={!passed && !finished} />
+  {#key round}
+    <MentorPanel {mentor} {hints} request={hintRequest} onHelp={() => helpUsed++} active={!passed && !finished} />
+  {/key}
 
   <div class="result" data-testid="drill-result" aria-live="polite" bind:this={resultEl}>
     {#if result?.kind === "pass"}

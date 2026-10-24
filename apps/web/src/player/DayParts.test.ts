@@ -148,4 +148,34 @@ describe("FixIt", () => {
     await fireEvent.click(screen.getByRole("button", { name: /finish the day/i }));
     expect(onDone).toHaveBeenCalledOnce();
   });
+
+  it("fix-it miss records a failed drill on <id>#fix", async () => {
+    let out = "still broken\n";
+    const be = backend(runner(() => out));
+    const onProgress = vi.fn();
+    render(FixIt, { props: { chunk: a, progress: progress(), backend: be, onProgress, onDone: vi.fn() } });
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    await waitFor(() => expect(be.saved).toHaveLength(1));
+    expect(be.saved[0]).toEqual({
+      chunk_id: "a#fix",
+      concept: "ca",
+      step: "drill",
+      mission_id: null,
+      success: false,
+      first_try: false,
+      hints_used: 0,
+      local_date: localDate(),
+    });
+    // A second miss isn't saved again; the fix is.
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(be.saved).toHaveLength(1);
+    out = "a\n";
+    await fireEvent.click(screen.getByRole("button", { name: /^run/i }));
+    await waitFor(() => expect(be.saved).toHaveLength(2));
+    expect(be.saved[1]).toMatchObject({ chunk_id: "a#fix", success: true, first_try: false });
+    const last = onProgress.mock.calls.at(-1)![0] as ProgressState;
+    expect(last.concepts.ca.fails).toBe(1);
+    expect(last.completed).toContain("a#fix:drill");
+  });
 });
