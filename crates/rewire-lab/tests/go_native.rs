@@ -131,6 +131,27 @@ async fn infinite_loop_times_out_at_run_wall() {
 }
 
 #[tokio::test]
+async fn compile_timeout_is_not_a_never_ending_loop() {
+    require_sandbox!();
+    let limits = Limits {
+        compile_wall: Duration::from_millis(1),
+        ..Limits::default()
+    };
+    let r = run("package main\n\nfunc main() {}\n", limits).await;
+    assert!(!r.timed_out, "{r:?}");
+    assert!(matches!(r.exit_code, Some(n) if n != 0), "{r:?}");
+    assert!(r.stderr.contains("build took too long"), "{r:?}");
+    assert_eq!(r.duration_ms, 0);
+    let cards = rewire_core::explain_go_errors(&r.stderr, 0, r.timed_out, r.truncated);
+    assert_eq!(cards.len(), 1, "{cards:?}");
+    assert_eq!(cards[0].title, "Slow build");
+    assert_eq!(
+        cards[0].plain,
+        "Building took too long. Try again; the first build is the slowest."
+    );
+}
+
+#[tokio::test]
 async fn cpu_limit_times_out() {
     require_sandbox!();
     // Four spinning goroutines burn CPU faster than wall time, so RLIMIT_CPU

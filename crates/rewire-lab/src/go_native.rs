@@ -24,6 +24,12 @@ const GO_MOD: &str = "module lab\n\ngo 1.27\n";
 /// program in phase 2 gets exactly `cpu_secs` and `max_file_bytes`.
 const COMPILE_MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
+/// stderr when the compile phase runs out of time. It is not the learner's
+/// never-ending loop (their code never ran), so it is reported as a failed
+/// build (`timed_out: false`, exit 1) that the explain table maps to its own
+/// card.
+const BUILD_TOO_SLOW: &str = "rewire: build took too long\n";
+
 const FILE_TOO_LARGE_NOTE: &str =
     "\nRewire stopped the program: it tried to write a file bigger than the size limit.\n";
 
@@ -107,6 +113,16 @@ impl LanguageRuntime for GoNativeRuntime {
             ));
         }
         let v = verdict(&compile);
+        if v.timed_out {
+            return Ok(RawRunResult {
+                stdout: String::new(),
+                stderr: BUILD_TOO_SLOW.to_string(),
+                exit_code: Some(1),
+                timed_out: false,
+                truncated: false,
+                duration_ms: 0,
+            });
+        }
         if v.exit_code != Some(0) {
             return Ok(to_result(compile, 0));
         }

@@ -24,6 +24,9 @@ static FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s+\S*main\.g
 static OUT_OF_MEMORY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^(?:fatal error: (?:runtime: )?out of memory|runtime: out of memory:.*|fatal error: runtime: cannot (?:allocate memory|map pages in arena address space|reserve arena virtual address space).*)$").unwrap()
 });
+/// The desktop runner's marker for a compile phase that ran out of time.
+static BUILD_TOO_SLOW: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^rewire: build took too long$").unwrap());
 /// The runtime panic line holding the index message.
 static PANIC_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^.*index out of range \[(\d+)\] with length (\d+).*$").unwrap()
@@ -258,6 +261,20 @@ pub fn explain_go_errors(
         if let Some(x) = explain_message(raw) {
             push_unique(&mut found, card(line, None, x, raw));
         }
+    }
+
+    if found.is_empty()
+        && let Some(m) = BUILD_TOO_SLOW.find(stderr)
+    {
+        found.push(card(
+            None,
+            None,
+            (
+                "Slow build",
+                "Building took too long. Try again; the first build is the slowest.".into(),
+            ),
+            m.as_str(),
+        ));
     }
 
     if found.is_empty()

@@ -279,3 +279,15 @@ fn labcore_gc_checks_map_to_cards() {
     assert_eq!(titles, ["Missing answer", "Unused import"]);
     assert_eq!((out[0].line, out[0].col), (Some(9), Some(1)));
 }
+
+#[test]
+fn slow_build_card() {
+    let out = explain_go_errors("rewire: build took too long\n", 7, false, false);
+    assert_eq!(out.len(), 1, "{out:?}");
+    assert_eq!(out[0].title, "Slow build");
+    assert_eq!(
+        out[0].plain,
+        "Building took too long. Try again; the first build is the slowest."
+    );
+    assert_eq!(out[0].line, None);
+}
