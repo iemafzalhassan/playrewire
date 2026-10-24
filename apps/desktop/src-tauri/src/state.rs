@@ -37,7 +37,7 @@ impl std::error::Error for OpenError {}
 pub struct AppState {
     data_dir: PathBuf,
     store: Mutex<Store>,
-    keys: Box<dyn KeyStore + Send + Sync>,
+    keys: Arc<dyn KeyStore + Send + Sync>,
     /// `REWIRE_GO_ROOT`, read once at startup. Tests pass `None`.
     go_override: Option<PathBuf>,
     runtime: Mutex<Option<Arc<GoNativeRuntime>>>,
@@ -55,7 +55,7 @@ impl AppState {
         Ok(AppState {
             data_dir: data_dir.to_path_buf(),
             store: Mutex::new(store),
-            keys,
+            keys: Arc::from(keys),
             go_override,
             runtime: Mutex::new(None),
         })
@@ -71,6 +71,11 @@ impl AppState {
 
     pub fn keys(&self) -> &(dyn KeyStore + Send + Sync) {
         self.keys.as_ref()
+    }
+
+    /// A handle to the keychain that can move to a blocking thread.
+    pub fn keys_shared(&self) -> Arc<dyn KeyStore + Send + Sync> {
+        self.keys.clone()
     }
 
     /// The store, even if an earlier command panicked while holding it (the

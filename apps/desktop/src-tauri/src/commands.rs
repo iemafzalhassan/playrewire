@@ -7,6 +7,7 @@
 //! fixed RUN_ERROR messages from rewire-mentor.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use rewire_core::{ProgressState, StepRecord};
 use rewire_lab::{LabError, LanguageRuntime, Limits, RawRunResult, SourceFile, ToolchainError, ToolchainStatus};
@@ -238,10 +239,25 @@ pub fn effective_config(mut cfg: ProviderConfig) -> Option<ProviderConfig> {
 /// Streams a hint as AG-UI events. Every failure (no mentor set, keychain,
 /// network, provider) reaches the UI only as one of rewire-mentor's two fixed
 /// RUN_ERROR messages; the command itself always succeeds.
+/// How long the keychain read may take before a hint falls back. A locked
+/// Secret Service can block on an unlock prompt; the read runs on a blocking
+/// thread so it can't hold up the async runtime, and is abandoned after this.
+pub const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub async fn mentor_hint(
     st: &AppState,
     req: HintRequest,
     sink: &mut (dyn FnMut(AgUiEvent) + Send),
+) -> Result<(), String> {
+    mentor_hint_with_key_timeout(st, req, sink, KEYCHAIN_TIMEOUT).await
+}
+
+/// [`mentor_hint`] with the keychain timeout as a parameter, for tests.
+pub async fn mentor_hint_with_key_timeout(
+    st: &AppState,
+    req: HintRequest,
+    sink: &mut (dyn FnMut(AgUiEvent) + Send),
+    key_timeout: Duration,
 ) -> Result<(), String> {
     let fallback = |sink: &mut (dyn FnMut(AgUiEvent) + Send)| {
         sink(AgUiEvent::RunError { message: MSG_FALLBACK.to_string() });
@@ -252,14 +268,26 @@ pub async fn mentor_hint(
         return Ok(());
     };
     let key = match preset(&cfg.preset_id) {
-        Some(p) if takes_key(p) => match st.keys().get(&cfg.preset_id) {
-            Ok(k) => k,
-            Err(_) => {
-                eprintln!("rewire: could not read the mentor key from the keychain");
-                fallback(sink);
-                return Ok(());
+        Some(p) if takes_key(p) => {
+            let keys = st.keys_shared();
+            let account = cfg.preset_id.clone();
+            let read = tokio::task::spawn_blocking(move || keys.get(&account));
+            match tokio::time::timeout(key_timeout, read).await {
+                Ok(Ok(Ok(k))) => k,
+                Ok(Ok(Err(_))) | Ok(Err(_)) => {
+                    eprintln!("rewire: could not read the mentor key from the keychain");
+                    fallback(sink);
+                    return Ok(());
+                }
+                Err(_) => {
+                    // The blocking thread finishes (or stays parked) on its
+                    // own; nothing waits for it.
+                    eprintln!("rewire: the keychain took too long to answer");
+                    fallback(sink);
+                    return Ok(());
+                }
             }
-        },
+        }
         _ => None,
     };
     // On failure `hint` has already sent the right RUN_ERROR; its error value

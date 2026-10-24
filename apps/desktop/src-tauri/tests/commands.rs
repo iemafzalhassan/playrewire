@@ -240,3 +240,43 @@ impl KeyStore for SharedKeys {
         self.0.get(account)
     }
 }
+
+/// A keychain that hangs (a locked Secret Service waiting on a prompt).
+struct SlowKeys;
+
+impl KeyStore for SlowKeys {
+    fn set(&self, _: &str, _: &str) -> Result<(), rewire_mentor::MentorError> {
+        Ok(())
+    }
+    fn get(&self, _: &str) -> Result<Option<String>, rewire_mentor::MentorError> {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        Ok(Some("k".into()))
+    }
+}
+
+#[test]
+fn keychain_timeout_is_five_seconds() {
+    assert_eq!(commands::KEYCHAIN_TIMEOUT, std::time::Duration::from_secs(5));
+}
+
+#[tokio::test]
+async fn mentor_hint_falls_back_when_the_keychain_hangs() {
+    let dir = tempfile::tempdir().unwrap();
+    let st = AppState::open(dir.path(), Box::new(SlowKeys), None).unwrap();
+    let s = Settings { mentor: Some(mentor_cfg()), ..Default::default() };
+    commands::save_settings(&st, s).unwrap();
+    let req = HintRequest {
+        concept: "print".into(),
+        exercise_prompt: "say hi".into(),
+        code: "".into(),
+        last_error: None,
+        attempt: 1,
+    };
+    let mut got = Vec::new();
+    let t = std::time::Instant::now();
+    commands::mentor_hint_with_key_timeout(&st, req, &mut |e| got.push(e), std::time::Duration::from_millis(200))
+        .await
+        .unwrap();
+    assert!(t.elapsed() < std::time::Duration::from_secs(2), "took {:?}", t.elapsed());
+    assert_eq!(got, vec![AgUiEvent::RunError { message: MSG_FALLBACK.into() }]);
+}
