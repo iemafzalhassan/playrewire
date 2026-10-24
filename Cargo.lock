@@ -6573,6 +6573,7 @@ dependencies = [
  "httpmock",
  "libc",
  "reqwest",
+ "rewire-core",
  "serde",
  "serde_json",
  "sha2 0.11.1",

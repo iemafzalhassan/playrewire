@@ -251,3 +251,31 @@ fn friendly_error_serializes_snake_case() {
     assert_eq!(v["title"], "Missing answer");
     assert!(v.get("raw").is_some() && v.get("col").is_some() && v.get("plain").is_some());
 }
+
+#[test]
+fn out_of_memory_card() {
+    let want = (
+        "Too much memory",
+        "Your program kept asking for more memory until Rewire stopped it. Is something growing inside a loop that never ends?",
+    );
+    for f in ["gc_out_of_memory.txt", "gc_out_of_memory_runtime.txt"] {
+        let out = explain_go_errors(&fx(f), 7, false, false);
+        assert_eq!(out.len(), 1, "{f}: {out:?}");
+        assert_eq!((out[0].title.as_str(), out[0].plain.as_str()), want, "{f}");
+        assert_eq!(out[0].line, None);
+        assert!(out[0].raw.contains("out of memory"), "{f}");
+    }
+}
+
+#[test]
+fn labcore_gc_checks_map_to_cards() {
+    let out = explain_go_errors(
+        "9:1: missing return\n5:2: \"strings\" imported and not used\n",
+        0,
+        false,
+        false,
+    );
+    let titles: Vec<_> = out.iter().map(|e| e.title.as_str()).collect();
+    assert_eq!(titles, ["Missing answer", "Unused import"]);
+    assert_eq!((out[0].line, out[0].col), (Some(9), Some(1)));
+}

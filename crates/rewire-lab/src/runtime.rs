@@ -26,6 +26,9 @@ pub struct Limits {
     pub max_file_bytes: u64,
     /// Cap on combined stdout + stderr bytes.
     pub max_output: usize,
+    /// `RLIMIT_AS` for the learner's program, in bytes. The compile phase is
+    /// not limited (only the trusted toolchain runs there).
+    pub max_memory_bytes: u64,
     /// Allow network access. Always `false` in the MVP.
     pub network: bool,
 }
@@ -38,6 +41,7 @@ impl Default for Limits {
             cpu_secs: 10,
             max_file_bytes: 10 * 1024 * 1024,
             max_output: 65_536,
+            max_memory_bytes: 1024 * 1024 * 1024,
             network: false,
         }
     }

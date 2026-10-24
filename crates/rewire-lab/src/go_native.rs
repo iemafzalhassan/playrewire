@@ -95,6 +95,7 @@ impl LanguageRuntime for GoNativeRuntime {
                 cpu_secs: limits.cpu_secs.max(compile_secs),
                 max_file_bytes: limits.max_file_bytes.max(COMPILE_MAX_FILE_BYTES),
                 max_output: limits.max_output,
+                max_memory_bytes: None,
             },
         )
         .await?;
@@ -118,6 +119,7 @@ impl LanguageRuntime for GoNativeRuntime {
                 cpu_secs: limits.cpu_secs,
                 max_file_bytes: limits.max_file_bytes,
                 max_output: limits.max_output,
+                max_memory_bytes: Some(limits.max_memory_bytes),
             },
         )
         .await?;

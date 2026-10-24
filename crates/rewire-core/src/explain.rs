@@ -19,6 +19,11 @@ static POS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^(?:\./)?(?:[\w./-]+\.go:)?(\d+):(\d+): (.+)$").unwrap());
 /// The `main.go:N` frame of a goroutine trace.
 static FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s+\S*main\.go:(\d+)").unwrap());
+/// Go's runtime giving up on an allocation (`fatal error: out of memory`,
+/// `fatal error: runtime: out of memory`, or a failed mmap).
+static OUT_OF_MEMORY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?m)^(?:fatal error: (?:runtime: )?out of memory|runtime: out of memory:.*|fatal error: runtime: cannot (?:allocate memory|map pages in arena address space|reserve arena virtual address space).*)$").unwrap()
+});
 /// The runtime panic line holding the index message.
 static PANIC_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^.*index out of range \[(\d+)\] with length (\d+).*$").unwrap()
@@ -253,6 +258,21 @@ pub fn explain_go_errors(
         if let Some(x) = explain_message(raw) {
             push_unique(&mut found, card(line, None, x, raw));
         }
+    }
+
+    if found.is_empty()
+        && let Some(m) = OUT_OF_MEMORY.find(stderr)
+    {
+        found.push(card(
+            None,
+            None,
+            (
+                "Too much memory",
+                "Your program kept asking for more memory until Rewire stopped it. Is something growing inside a loop that never ends?"
+                    .into(),
+            ),
+            m.as_str(),
+        ));
     }
 
     if found.is_empty() && !stderr.trim().is_empty() {

@@ -1,0 +1,12 @@
+runtime: out of memory: cannot allocate 117440512-byte block (305627136 in use)
+fatal error: out of memory
+
+goroutine 1 gp=0x3c30b5dfe1e0 m=8 mp=0x3c30b5e91008 [running]:
+runtime.throw({0x4852b9?, 0x3696?})
+	/opt/go/src/runtime/panic.go:1243 +0x48 fp=0x3c30b5e84d38 sp=0x3c30b5e84d08 pc=0x476c88
+runtime.(*mcache).allocLarge(0x3c30b5dfe1e0?, 0x6d2c000, 0x1)
+	/opt/go/src/runtime/mcache.go:259 +0x18b fp=0x3c30b5e84d88 sp=0x3c30b5e84d38 pc=0x42094b
+runtime.growslice(0x3c30be0da000, 0x4600000?, 0x45de000?, 0x100000?, 0x52c4a0?)
+	/opt/go/src/runtime/slice.go:265 +0x573 fp=0x3c30b5e84e80 sp=0x3c30b5e84e10 pc=0x478633
+main.main()
+	/work/main.go:13 +0x52 fp=0x3c30b5e84eb8 sp=0x3c30b5e84e80 pc=0x483272

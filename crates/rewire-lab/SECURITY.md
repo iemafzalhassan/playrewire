@@ -54,6 +54,9 @@ Each item has a test in `tests/go_native.rs`.
   kernel kills the program at exactly 10 s of CPU. When time runs out, the whole process group is killed. The
   sandbox dies with its parent, and the process namespace takes any leftover
   processes with it.
+- **Memory**: the program's address space is capped at 1 GiB (`RLIMIT_AS`,
+  run phase only). An allocation past it makes the Go runtime stop with
+  "fatal error: out of memory", and the learner sees a "Too much memory" card.
 - **Output**: stdout and stderr together are capped at 64 KiB. Past the cap,
   the program is killed.
 - **Nested user namespaces**: they are blocked (`--disable-userns`). This
@@ -75,8 +78,6 @@ bigger packages such as `net/http` needs about 100 MB of `/tmp`.
 
 ## Known gaps
 
-- **No memory limit.** A program can allocate memory until the machine runs
-  out, within its 10 s.
 - **No process-count limit.** A program can start copies of itself (a fork
   bomb) within its 10 s.
 - **No seccomp filter.** Every system call the kernel allows to an
@@ -98,8 +99,10 @@ bigger packages such as `net/http` needs about 100 MB of `/tmp`.
 ## Likely next step
 
 Where it is available, wrap bwrap in
-`systemd-run --user --scope -p MemoryMax=... -p TasksMax=...` to get memory and
-process-count limits from cgroups, and add a seccomp profile to bwrap.
+`systemd-run --user --scope -p TasksMax=...` to get a process-count limit from
+cgroups (a cgroup `MemoryMax` would also cap the page cache and every process
+together, which `RLIMIT_AS` does per process), and add a seccomp profile to
+bwrap.
 
 ## Toolchain download
 

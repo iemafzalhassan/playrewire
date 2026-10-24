@@ -6,8 +6,8 @@
 //! read-only root holding only the Go toolchain read-only, the per-run
 //! workdir, the cache (compile phase only), a private `/proc`, a read-only
 //! minimal `/dev` and a size-capped private `/tmp`). This module adds what bwrap does not
-//! do on its own: CPU and file-size rlimits, a wall clock, killing the whole
-//! process group, and a cap on output.
+//! do on its own: CPU, file-size and (run phase) address-space rlimits, a
+//! wall clock, killing the whole process group, and a cap on output.
 
 use std::ffi::OsString;
 use std::io;
@@ -227,6 +227,8 @@ pub(crate) struct PhaseLimits {
     pub cpu_secs: u64,
     pub max_file_bytes: u64,
     pub max_output: usize,
+    /// `RLIMIT_AS` in bytes; `None` leaves it as inherited (compile phase).
+    pub max_memory_bytes: Option<u64>,
 }
 
 /// What one sandboxed process did.
@@ -263,7 +265,7 @@ pub(crate) async fn run_phase(
         // If the run future is dropped, bwrap is SIGKILLed and
         // --die-with-parent plus the pid namespace take the rest down.
         .kill_on_drop(true);
-    let (cpu, fsize) = (lim.cpu_secs, lim.max_file_bytes);
+    let (cpu, fsize, mem) = (lim.cpu_secs, lim.max_file_bytes, lim.max_memory_bytes);
     // SAFETY: the closure only calls async-signal-safe libc functions
     // (setsid, getrlimit, setrlimit, close_range) and allocates nothing.
     unsafe {
@@ -277,6 +279,13 @@ pub(crate) async fn run_phase(
             // (Go ignores SIGXCPU, so a soft-only limit would not stop it).
             set_rlimit(libc::RLIMIT_CPU, cpu, cpu)?;
             set_rlimit(libc::RLIMIT_FSIZE, fsize, fsize)?;
+            // RLIMIT_AS, not RLIMIT_DATA: Go maps its heap with mmap, which
+            // RLIMIT_DATA only partly covers. Measured with go1.27.2: hello
+            // starts fine under 1 GiB, and an allocation loop fails within
+            // 0.1 s with "fatal error: out of memory".
+            if let Some(m) = mem {
+                set_rlimit(libc::RLIMIT_AS, m, m)?;
+            }
             // Defence in depth: no inherited host fd survives exec, even one
             // some other part of the app opened without O_CLOEXEC. Best
             // effort (needs Linux 5.11); std's own fds are already CLOEXEC.

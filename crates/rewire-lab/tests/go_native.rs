@@ -177,6 +177,31 @@ async fn endless_print_truncated() {
 }
 
 #[tokio::test]
+async fn memory_limit_stops_allocation_loop() {
+    require_sandbox!();
+    let src = "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tvar s []byte\n\tfor {\n\t\ts = append(s, make([]byte, 1<<20)...)\n\t\tif len(s) < 0 {\n\t\t\tfmt.Println(len(s))\n\t\t}\n\t}\n}\n";
+    let r = run(src, Limits::default()).await;
+    assert!(
+        matches!(r.exit_code, Some(n) if n != 0),
+        "exit {:?} stderr {}",
+        r.exit_code,
+        r.stderr
+    );
+    assert!(!r.timed_out && !r.truncated, "{r:?}");
+    assert!(
+        r.duration_ms < 5000,
+        "the memory limit should stop it quickly: {} ms",
+        r.duration_ms
+    );
+    let cards = rewire_core::explain_go_errors(&r.stderr, 0, r.timed_out, r.truncated);
+    assert_eq!(
+        cards.first().map(|c| c.title.as_str()),
+        Some("Too much memory"),
+        "{cards:?}"
+    );
+}
+
+#[tokio::test]
 async fn network_is_denied() {
     require_sandbox!();
     let r = run(
@@ -547,6 +572,7 @@ fn limits_default_matches_spec() {
     assert_eq!(l.cpu_secs, 10);
     assert_eq!(l.max_file_bytes, 10 * 1024 * 1024);
     assert_eq!(l.max_output, 65_536);
+    assert_eq!(l.max_memory_bytes, 1024 * 1024 * 1024);
     assert!(!l.network);
 }
 

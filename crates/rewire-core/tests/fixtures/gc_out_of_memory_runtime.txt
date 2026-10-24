@@ -1,0 +1,11 @@
+fatal error: runtime: out of memory
+
+runtime stack:
+runtime.throw({0x4852b9?, 0x3696?})
+	/opt/go/src/runtime/panic.go:1243 +0x48
+runtime.sysMap(0xc000400000, 0x4000000, 0x5b1e30?)
+	/opt/go/src/runtime/mem_linux.go:187 +0x11b
+
+goroutine 1 [running]:
+main.main()
+	/work/main.go:13 +0x52
