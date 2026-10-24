@@ -40,6 +40,8 @@ export interface WorldView {
   onTerminal(cb: (missionId: string) => void): () => void;
   onEventsDone(cb: () => void): () => void;
   onNear(cb: (missionId: string | null) => void): () => void;
+  /** The street stopped for good (a trapped wasm module); draw the sketch instead. */
+  onFailed?(cb: () => void): () => void;
   labels(): Labels | null;
 }
 
@@ -73,6 +75,7 @@ const readyWaiters: (() => void)[] = [];
 const terminalCbs = new Set<(m: string) => void>();
 const doneCbs = new Set<() => void>();
 const nearCbs = new Set<(m: string | null) => void>();
+const failedCbs = new Set<() => void>();
 
 /** Can this browser draw the 3D street at all? */
 export function webgl2Available(): boolean {
@@ -84,15 +87,24 @@ export function webgl2Available(): boolean {
   }
 }
 
+// A callback that throws must not stop the pump.
+function safe(f: () => void) {
+  try {
+    f();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/** A trapped wasm module (a Bevy panic) can't be used again: say so, once. */
+function fail(e: unknown) {
+  if (failed) return;
+  failed = true;
+  console.error("the street stopped", e);
+  failedCbs.forEach((cb) => safe(cb));
+}
+
 function dispatch(s: Signal) {
-  // A callback that throws must not stop the pump.
-  const safe = (f: () => void) => {
-    try {
-      f();
-    } catch (e) {
-      console.error(e);
-    }
-  };
   if (s.kind === "ready") {
     ready = true;
     readyWaiters.splice(0).forEach((w) => w());
@@ -106,9 +118,7 @@ function pump() {
   try {
     for (const s of JSON.parse(mod.pollSignals()) as Signal[]) dispatch(s);
   } catch (e) {
-    // A trapped wasm module (a Bevy panic) can't be used again.
-    console.error("the street stopped", e);
-    failed = true;
+    fail(e);
     return;
   }
   requestAnimationFrame(pump);
@@ -141,12 +151,35 @@ export function start(canvasId: string): Promise<void> {
   return starting;
 }
 
-export const loadMission = (id: string) => mod?.loadMission(id);
-export const applyEvents = (eventsJson: string) => mod?.applyEvents(eventsJson);
-export const setReducedMotion = (on: boolean) => mod?.setReducedMotion(on);
-export const setInputEnabled = (on: boolean) => mod?.setInputEnabled(on);
-export const goToTerminal = () => mod?.goToTerminal();
-export const highlight = (t: Target | null) => mod?.highlight(JSON.stringify(t));
+/**
+ * Wraps a call into the wasm module. Once the street has failed it throws without
+ * touching the dead module; a call that throws marks the street failed and tells
+ * every onFailed listener. Either way the caller sees the throw and can fall back.
+ */
+function guarded<A extends unknown[]>(f: (m: WorldModule, ...a: A) => void): (...a: A) => void {
+  return (...a) => {
+    if (failed) throw new Error("the street stopped");
+    if (!mod) return;
+    try {
+      f(mod, ...a);
+    } catch (e) {
+      fail(e);
+      throw e;
+    }
+  };
+}
+
+export const loadMission = guarded((m, id: string) => m.loadMission(id));
+export const applyEvents = guarded((m, eventsJson: string) => m.applyEvents(eventsJson));
+export const setReducedMotion = guarded((m, on: boolean) => m.setReducedMotion(on));
+export const setInputEnabled = guarded((m, on: boolean) => m.setInputEnabled(on));
+export const goToTerminal = guarded((m) => m.goToTerminal());
+export const highlight = guarded((m, t: Target | null) => m.highlight(JSON.stringify(t)));
+export function onFailed(cb: () => void): () => void {
+  failedCbs.add(cb);
+  if (failed) queueMicrotask(() => failedCbs.has(cb) && safe(cb));
+  return () => failedCbs.delete(cb);
+}
 export function onTerminal(cb: (missionId: string) => void): () => void {
   terminalCbs.add(cb);
   return () => terminalCbs.delete(cb);
@@ -160,10 +193,12 @@ export function onNear(cb: (missionId: string | null) => void): () => void {
   return () => nearCbs.delete(cb);
 }
 export function labels(): Labels | null {
+  if (failed) return null;
   try {
     const s = mod?.labels();
     return s ? (JSON.parse(s) as Labels) : null;
-  } catch {
+  } catch (e) {
+    fail(e);
     return null;
   }
 }
@@ -203,7 +238,7 @@ function park() {
   parking.appendChild(canvas);
 }
 
-const bevyView: WorldView = {
+export const bevyView: WorldView = {
   kind: "bevy",
   loadMission: (id) => loadMission(id),
   applyEvents: (j) => applyEvents(j),
@@ -214,8 +249,16 @@ const bevyView: WorldView = {
   onTerminal,
   onEventsDone,
   onNear,
+  onFailed,
   labels,
 };
+
+/** Test hook: stands a fake wasm module in for the real one. */
+export function _useModuleForTest(m: Partial<WorldModule> | null) {
+  mod = m as WorldModule | null;
+  failed = false;
+  ready = m !== null;
+}
 
 /**
  * Puts the street in `host` (sized by CSS) and starts it if needed. Resolves to null

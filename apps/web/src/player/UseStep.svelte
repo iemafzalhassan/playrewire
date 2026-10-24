@@ -115,10 +115,49 @@
     blank_with_hints: "A blank page this time. You've done this before. Hints are here if you need them.",
   }[level];
 
+  let alive = true;
+  let release = () => {};
+  /** Subscriptions on the current street; dropped when it changes. */
+  let offs: (() => void)[] = [];
+
+  function attach(view: WorldView) {
+    offs.splice(0).forEach((f) => f());
+    world = view;
+    offs.push(
+      view.onTerminal((m) => m === mission.id && openEditor()),
+      view.onNear((m) => (near = m === mission.id)),
+    );
+    if (view.onFailed) offs.push(view.onFailed(() => fallBack()));
+  }
+
+  /** The 3D street died (a trapped wasm module): carry on in the sketch street. */
+  function fallBack(e?: unknown) {
+    if (!alive || !world || world.kind === "sketch") return;
+    if (e) console.warn("the 3D street stopped; drawing the sketch street", e);
+    const s = new SketchWorld();
+    sketch = s;
+    release();
+    release = () => {};
+    labels = null;
+    near = false;
+    attach(s);
+    s.setReducedMotion(reduced());
+    s.loadMission(mission.id);
+    if (playing) startPlay(s, playing);
+  }
+
+  /** Calls the street; if the 3D street throws, swaps to the sketch and calls it there. */
+  function onStreet(f: (v: WorldView) => void) {
+    if (!world) return;
+    try {
+      f(world);
+    } catch (e) {
+      fallBack(e);
+      if (world) f(world);
+    }
+  }
+
   onMount(() => {
-    let release = () => {};
-    let alive = true;
-    const offs: (() => void)[] = [];
     (async () => {
       let opened: Awaited<ReturnType<Opener>> = null;
       try {
@@ -140,20 +179,19 @@
       } else {
         view = opened;
       }
-      world = view;
-      view.setReducedMotion(reduced());
-      view.setInputEnabled(true);
-      view.highlight(null);
-      offs.push(
-        view.onTerminal((m) => m === mission.id && openEditor()),
-        view.onNear((m) => (near = m === mission.id)),
-      );
-      view.loadMission(mission.id);
+      attach(view);
+      onStreet((v) => {
+        v.setReducedMotion(reduced());
+        v.setInputEnabled(true);
+        v.highlight(null);
+        v.loadMission(mission.id);
+      });
       phase = "street";
-      if (view.kind === "bevy" && typeof requestAnimationFrame === "function") {
+      if (world?.kind === "bevy" && typeof requestAnimationFrame === "function") {
+        const bevy = world;
         const loop = () => {
-          if (!alive) return;
-          labels = view.labels();
+          if (!alive || world !== bevy) return;
+          labels = bevy.labels();
           requestAnimationFrame(loop);
         };
         requestAnimationFrame(loop);
@@ -161,9 +199,13 @@
     })();
     return () => {
       alive = false;
-      offs.forEach((f) => f());
-      world?.setInputEnabled(true);
-      world?.highlight(null);
+      offs.splice(0).forEach((f) => f());
+      try {
+        world?.setInputEnabled(true);
+        world?.highlight(null);
+      } catch {
+        // A dead street needs no tidying.
+      }
       sketch?.destroy();
       release();
     };
@@ -172,24 +214,24 @@
   async function openEditor() {
     if (phase === "editor") return;
     phase = "editor";
-    world?.setInputEnabled(false);
+    onStreet((v) => v.setInputEnabled(false));
     await tick();
     editor?.focus();
   }
 
   async function backToStreet() {
     phase = "street";
-    world?.setInputEnabled(true);
+    onStreet((v) => v.setInputEnabled(true));
     await tick();
     host?.querySelector("canvas")?.focus();
   }
 
   function goToTerminal() {
-    world?.setReducedMotion(reduced());
+    onStreet((v) => v.setReducedMotion(reduced()));
     if (near) {
       openEditor();
     } else {
-      world?.goToTerminal();
+      onStreet((v) => v.goToTerminal());
     }
   }
 
@@ -213,16 +255,36 @@
     return labTrouble(`could not start the code runner: ${String(e)}\n`)!;
   }
 
-  /** Resolves when the street has played every event (or after a safety timeout). */
-  function eventsPlayed(view: WorldView): Promise<void> {
+  type Playing = { json: string; finish: () => void; off: () => void };
+  /** Events being played right now; replayed on the sketch if the 3D street dies. */
+  let playing: Playing | null = null;
+
+  function startPlay(view: WorldView, p: Playing) {
+    p.off();
+    p.off = view.onEventsDone(p.finish);
+    try {
+      view.applyEvents(p.json);
+    } catch (e) {
+      // fallBack replays `playing` on the sketch street.
+      if (view.kind === "sketch") throw e;
+      fallBack(e);
+    }
+  }
+
+  /** Plays the events and resolves when the street is done (or after a safety timeout). */
+  function playEvents(json: string): Promise<void> {
     return new Promise((resolve) => {
-      const t = setTimeout(done, 15_000);
-      const off = view.onEventsDone(done);
-      function done() {
+      const p: Playing = { json, finish, off: () => {} };
+      const t = setTimeout(finish, 15_000);
+      function finish() {
         clearTimeout(t);
-        off();
+        p.off();
+        if (playing === p) playing = null;
         resolve();
       }
+      playing = p;
+      if (world) startPlay(world, p);
+      else finish();
     });
   }
 
@@ -238,8 +300,18 @@
       return show();
     }
     running = true;
+    try {
+      await runOnce();
+    } finally {
+      running = false;
+      slow = false;
+    }
+    return show();
+  }
+
+  async function runOnce() {
     result = null;
-    world.highlight(null);
+    onStreet((v) => v.highlight(null));
     const slowTimer = setTimeout(() => (slow = true), 900);
     const { files, lineOffset } = missionFiles(cityStub, mission.setup, code, lv.wholeFile);
     const hintsAtRun = helpUsed;
@@ -255,9 +327,8 @@
     slow = false;
 
     if (thrown || !r) {
-      running = false;
       result = { kind: "error", errors: [thrownTrouble(thrown)] };
-      return show();
+      return;
     }
     const trouble = labTrouble(r.stderr);
     const errors = trouble
@@ -269,25 +340,20 @@
     stdout = parsed.stdout.replace(/\n+$/, "");
     says = parsed.events.flatMap((e: CityEvent) => (e.op === "say" ? [e.text] : []));
     if (errors.length) {
-      running = false;
       result = { kind: "error", errors };
       if (!trouble && firstRun === null) firstRun = false;
       if (!trouble) {
         lastError = errors.map((e) => e.raw.trim() || `${e.title}. ${e.plain}`).join("\n");
         miss();
       }
-      return show();
+      return;
     }
 
     // Let the city play first; the verdict comes once the street has finished.
-    const view = world;
-    view.setReducedMotion(reduced());
-    const played = eventsPlayed(view);
-    view.applyEvents(JSON.stringify(parsed.events));
+    onStreet((v) => v.setReducedMotion(reduced()));
     const verdict = checkMission(mission.expectEvents, parsed.events);
     result = { kind: "watching" };
-    await played;
-    running = false;
+    await playEvents(JSON.stringify(parsed.events));
 
     if (firstRun === null) firstRun = verdict.kind === "pass" && hintsAtRun === 0;
     if (verdict.kind === "pass") {
@@ -296,12 +362,11 @@
       onDone({ firstTry: firstRun, hintsUsed: helpUsed });
     } else {
       const caption = missionCaption(mission, verdict, parsed.events)!;
-      view.highlight(caption.target);
+      onStreet((v) => v.highlight(caption.target));
       result = { kind: "wrong", caption };
       lastError = `It ran, but the street went wrong: ${caption.text}`;
       miss();
     }
-    return show();
   }
 
   // Built-in hints only on the blank-page level (help fades); the mentor is there at every level.

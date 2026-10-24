@@ -13,6 +13,7 @@ export class FakeWorld implements WorldView {
   private terminal = new Set<(m: string) => void>();
   private done = new Set<() => void>();
   private near = new Set<(m: string | null) => void>();
+  private failed = new Set<() => void>();
 
   loadMission(id: string) {
     this.mission = id;
@@ -52,6 +53,14 @@ export class FakeWorld implements WorldView {
   onNear(cb: (m: string | null) => void) {
     this.near.add(cb);
     return () => this.near.delete(cb);
+  }
+  onFailed(cb: () => void) {
+    this.failed.add(cb);
+    return () => this.failed.delete(cb);
+  }
+  /** The street stopped on its own (a trapped wasm module). */
+  fail() {
+    this.failed.forEach((cb) => cb());
   }
   labels(): Labels | null {
     return null;
