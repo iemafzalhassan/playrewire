@@ -109,7 +109,7 @@ func Run(ctx context.Context, files []File) Result {
 		}
 	}
 	for _, f := range files {
-		if msgs := unusedVariables(f); len(msgs) > 0 {
+		if msgs := gcChecks(f); len(msgs) > 0 {
 			return finish(1, strings.Join(msgs, "\n")+"\n")
 		}
 	}

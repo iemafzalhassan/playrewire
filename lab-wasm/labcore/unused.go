@@ -6,16 +6,20 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"regexp"
 	"sort"
 	"strings"
 )
 
 // stubImporter hands go/types an empty, complete package for every import.
-// Yaegi v0.16.1 (the latest release) does not report unused variables, which
-// gc does and the lessons rely on, so we type-check each file ourselves and
-// keep only the "declared and not used" diagnostics. Every other error is
-// expected noise (selectors on the stub packages, names from other files)
-// and is dropped; Yaegi remains the authority on everything else.
+// Yaegi v0.16.1 (the latest release) accepts several programs gc rejects:
+// unused variables, unused imports, functions that can fall off the end
+// without returning, and expression statements whose value is thrown away.
+// The lessons rely on gc's behavior, so we type-check each file ourselves
+// and keep only those diagnostics (go/types shares gc's checker, so the
+// wording is gc's). Every other error is expected noise (selectors on the
+// stub packages, names from other files) and is dropped; Yaegi remains the
+// authority on everything else.
 type stubImporter struct{}
 
 func (stubImporter) Import(path string) (*types.Package, error) {
@@ -25,8 +29,13 @@ func (stubImporter) Import(path string) (*types.Package, error) {
 	return p, nil
 }
 
-// unusedVariables returns "LINE:COL: declared and not used: x" lines for f.
-func unusedVariables(f File) []string {
+// gcOnly matches the go/types messages Yaegi does not produce itself.
+var gcOnly = regexp.MustCompile(`^(declared and not used: \w+|missing return|.+ is not used|"[^"]+" imported (as \w+ )?and not used)$`)
+
+// gcChecks returns "LINE:COL: msg" lines, in source order, for the gc
+// errors Yaegi misses: "declared and not used: x", "missing return",
+// "n * 3 (value of type int) is not used" and `"strings" imported and not used`.
+func gcChecks(f File) []string {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, f.Name, f.Source, 0)
 	if err != nil {
@@ -41,7 +50,7 @@ func unusedVariables(f File) []string {
 		Importer: stubImporter{},
 		Error: func(err error) {
 			te, ok := err.(types.Error)
-			if !ok || !strings.HasPrefix(te.Msg, "declared and not used") {
+			if !ok || !gcOnly.MatchString(te.Msg) {
 				return
 			}
 			found = append(found, diag{fset.Position(te.Pos), te.Msg})
