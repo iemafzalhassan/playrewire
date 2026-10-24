@@ -1,3 +1,7 @@
 packages:
   - apps/web
 minimumReleaseAge: 10080
+# pnpm 12 refuses unreviewed install scripts. esbuild's only checks its
+# platform binary, which pnpm already installs as an optional package.
+allowBuilds:
+  esbuild: false
