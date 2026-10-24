@@ -22,7 +22,7 @@ use tokio::process::Command;
 use crate::runtime::LabError;
 
 /// User-facing message when bwrap can't start (e.g. Ubuntu's AppArmor
-/// restriction on unprivileged user namespaces; Task 18 ships a profile).
+/// restriction on unprivileged user namespaces without the packaged profile).
 pub const SANDBOX_UNAVAILABLE: &str =
     "Rewire couldn't start its safe practice space on this system. See docs: Linux sandbox setup.";
 
@@ -89,9 +89,20 @@ pub(crate) async fn sandbox_probe_async() -> Result<(), LabError> {
     }
 }
 
-/// Resolves `bwrap` on the host `PATH` once, so the sandboxed command itself
-/// can be spawned with a cleared environment.
+/// Rewire's own copy of bwrap, made by the deb's postinst on distros that
+/// ship AppArmor. The AppArmor profile `dev.playrewire.rewire` lets this one
+/// path create user namespaces on Ubuntu 24.04+, leaving the system's
+/// `/usr/bin/bwrap` untouched (see `packaging/linux/README.md`).
+pub const PACKAGED_BWRAP: &str = "/usr/lib/rewire/bwrap";
+
+/// Resolves `bwrap`: the packaged copy if it exists, otherwise the first one
+/// on the host `PATH`. Resolved here so the sandboxed command itself can be
+/// spawned with a cleared environment.
 fn bwrap_path() -> PathBuf {
+    let packaged = Path::new(PACKAGED_BWRAP);
+    if packaged.is_file() {
+        return packaged.to_path_buf();
+    }
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
             let candidate = dir.join("bwrap");

@@ -1,0 +1,57 @@
+#!/bin/sh
+# Rewire deb postinst (Apache-2.0).
+#
+# 1. Copies /usr/bin/bwrap to /usr/lib/rewire/bwrap, Rewire's own sandbox
+#    helper. The AppArmor profile below attaches to that path only.
+# 2. Installs the AppArmor profile dev.playrewire.rewire and loads it when
+#    AppArmor is running, so bwrap may create user namespaces on Ubuntu 24.04+.
+#
+# Safe to run again, and it never fails the install: if a step doesn't work,
+# it prints a warning and Rewire shows its "Linux sandbox setup" help instead.
+# Not `set -e` on purpose.
+set -u
+
+HELPER_DIR=/usr/lib/rewire
+HELPER="$HELPER_DIR/bwrap"
+PROFILE_SRC=/usr/share/rewire/apparmor/dev.playrewire.rewire
+PROFILE=/etc/apparmor.d/dev.playrewire.rewire
+
+warn() {
+    echo "rewire: warning: $*" >&2
+    echo "rewire: see https://github.com/iemafzalhassan/playrewire/blob/main/docs/install.md#linux-sandbox-setup" >&2
+}
+
+case "${1:-configure}" in
+    configure|abort-upgrade|abort-remove|abort-deconfigure) ;;
+    *) exit 0 ;;
+esac
+
+# Refresh the helper on every configure, so it follows the installed bwrap.
+if [ -x /usr/bin/bwrap ]; then
+    if mkdir -p "$HELPER_DIR" &&
+        cp /usr/bin/bwrap "$HELPER.new" &&
+        chmod 0755 "$HELPER.new" &&
+        mv -f "$HELPER.new" "$HELPER"; then
+        :
+    else
+        rm -f "$HELPER.new"
+        warn "could not copy /usr/bin/bwrap to $HELPER"
+    fi
+else
+    warn "/usr/bin/bwrap is missing; install the bubblewrap package"
+fi
+
+# Only where AppArmor policy is in use. Elsewhere there's nothing to do.
+if [ -d /etc/apparmor.d ] && [ -f "$PROFILE_SRC" ]; then
+    if ! cp "$PROFILE_SRC" "$PROFILE" || ! chmod 0644 "$PROFILE"; then
+        warn "could not install the AppArmor profile at $PROFILE"
+    elif [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null 2>&1; then
+        # -r: load or replace. Loaded profiles also come back at boot from
+        # /etc/apparmor.d.
+        if ! apparmor_parser -r "$PROFILE"; then
+            warn "could not load the AppArmor profile $PROFILE"
+        fi
+    fi
+fi
+
+exit 0

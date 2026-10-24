@@ -1,0 +1,163 @@
+name: release
+
+# Runs only when a maintainer pushes a version tag such as v0.1.0. The release
+# it creates is a draft: the owner reviews it and publishes it by hand.
+on:
+  push:
+    tags: ["v*"]
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Tag matches the app version
+        id: version
+        run: |
+          ver=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' apps/desktop/src-tauri/tauri.conf.json)
+          cargo_ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "v$ver" != "$GITHUB_REF_NAME" ] || [ "$ver" != "$cargo_ver" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, tauri.conf.json $ver and Cargo.toml $cargo_ver must agree"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+      - name: SBOM (SPDX JSON, from the lockfiles)
+        # Before the build, so it lists Cargo.lock, pnpm-lock.yaml and go.sum
+        # rather than everything under target/ and node_modules/.
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: rewire-${{ steps.version.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99"
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.2"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: pnpm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,wasm-bindgen@0.2.129
+      - name: Tauri CLI
+        run: cargo install tauri-cli --version 2.12.3 --locked
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf file bubblewrap xvfb
+      - run: pnpm install --frozen-lockfile
+      - name: Build (wasm, content, web, deb/rpm/AppImage, web tarball)
+        run: just bundle
+      # The real test of the AppArmor profile: this runner restricts
+      # unprivileged user namespaces (unlike ci.yml, nothing turns that off
+      # here), so the sandbox only starts if the deb's profile works.
+      - name: Smoke test the deb
+        run: |
+          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
+          sudo apt-get install -y ./target/release/bundle/deb/*.deb
+          REWIRE_GO_ROOT="$(go env GOROOT)" xvfb-run -a rewire --smoke | tee smoke.txt
+          grep -qx "SMOKE OK" smoke.txt
+      # After the deb, so it finds the profiled /usr/lib/rewire/bwrap. This
+      # checks that the AppImage built here starts on Ubuntu 24.04.
+      - name: Smoke test the AppImage
+        run: |
+          appimage=$(ls target/release/bundle/appimage/*.AppImage)
+          APPIMAGE_EXTRACT_AND_RUN=1 REWIRE_GO_ROOT="$(go env GOROOT)" xvfb-run -a "$appimage" --smoke | tee smoke-appimage.txt
+          grep -qx "SMOKE OK" smoke-appimage.txt
+      - name: Collect release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir release
+          cp target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm \
+            target/release/bundle/appimage/*.AppImage \
+            "target/release/bundle/web/rewire-web-$VERSION.tar.gz" \
+            "rewire-$VERSION.spdx.json" release/
+          ls -l release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # Keyless cosign: the job's OIDC token is the signing identity.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - name: SHA256SUMS
+        working-directory: release
+        run: |
+          sha256sum -- * > ../SHA256SUMS
+          cat ../SHA256SUMS
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign SHA256SUMS (keyless)
+        run: cosign sign-blob --yes --bundle SHA256SUMS.cosign.bundle SHA256SUMS
+      - name: Verify the signature
+        run: |
+          cosign verify-blob --bundle SHA256SUMS.cosign.bundle \
+            --certificate-identity "https://github.com/$GITHUB_WORKFLOW_REF" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signature
+          path: |
+            SHA256SUMS
+            SHA256SUMS.cosign.bundle
+          if-no-files-found: error
+
+  publish:
+    needs: [build, sign]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Draft the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          ls -l out
+          prerelease=false
+          case "$VERSION" in *-*) prerelease=true ;; esac
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --prerelease="$prerelease" \
+            --title "Rewire $VERSION" \
+            --generate-notes

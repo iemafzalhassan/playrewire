@@ -17,6 +17,10 @@ The code runs in two phases, and each phase is its own bubblewrap
    code does not execute.
 2. Run: `/work/prog`, under the learner limits.
 
+The runner uses `/usr/lib/rewire/bwrap` when it exists (the deb makes this
+copy of the system bwrap so an AppArmor profile can apply to it alone, see
+`packaging/linux/README.md`), and otherwise the first `bwrap` on `PATH`.
+
 Inside the sandbox the root is empty and read-only. It holds only these:
 the Go toolchain (read-only at `/opt/go`), the work directory (`/work`), a
 private `/proc`, a minimal read-only `/dev`, and a private `/tmp`. The build

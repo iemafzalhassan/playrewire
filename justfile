@@ -82,10 +82,37 @@ e2e-web *args: web-prereqs
 dev-desktop: web-prereqs
     cd apps/desktop/src-tauri && CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo tauri dev
 
-# Release desktop binary (no installer yet) -> target/release/rewire.
+# Release desktop binary without installers -> target/release/rewire.
 build-desktop: web-prereqs
     cd apps/desktop/src-tauri && CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo tauri build --no-bundle
 
-# Static web build -> apps/web/dist (desktop packaging comes with Task 15/18).
-bundle: web-prereqs
+# Release build, in order: every wasm, the lesson bundle, the web app, the
+# Linux packages (target/release/bundle/{deb,rpm,appimage}/) and the web tarball.
+bundle:
+    just wasm
+    just content
     cd apps/web && pnpm build
+    cd apps/desktop/src-tauri && CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" cargo tauri build --bundles deb,rpm,appimage
+    just web-tarball
+
+# Checks apps/web/dist, then packs it as target/release/bundle/web/rewire-web-<ver>.tar.gz.
+# Reproducible: sorted names, fixed owner, mtime from the last commit, gzip -n.
+web-tarball:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ver=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' apps/desktop/src-tauri/tauri.conf.json)
+    [ -n "$ver" ] || { echo "no version in tauri.conf.json"; exit 1; }
+    dist=apps/web/dist
+    for f in index.html content/go.json lab/lab.wasm lab/wasm_exec.js; do
+        [ -f "$dist/$f" ] || { echo "web build is missing $f"; exit 1; }
+    done
+    compgen -G "$dist/world/*.wasm" >/dev/null || { echo "web build is missing world/*.wasm"; exit 1; }
+    compgen -G "$dist/assets/rewire_core_wasm_bg-*.wasm" >/dev/null || { echo "web build is missing the core wasm"; exit 1; }
+    grep -q 'http-equiv="Content-Security-Policy"' "$dist/index.html" || { echo "index.html lost its CSP"; exit 1; }
+    out=target/release/bundle/web
+    mkdir -p "$out"
+    name="rewire-web-$ver"
+    epoch="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct)}"
+    tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$epoch" \
+        --transform "s,^\.,$name," -C "$dist" -cf - . | gzip -n -9 > "$out/$name.tar.gz"
+    echo "$out/$name.tar.gz"

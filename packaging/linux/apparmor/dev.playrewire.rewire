@@ -1,0 +1,24 @@
+# AppArmor profile for Rewire's sandbox helper (Apache-2.0).
+#
+# Ubuntu 24.04 and later block unprivileged user namespaces unless the program
+# has an AppArmor profile that allows them. Rewire's practice sandbox is
+# bubblewrap, and bubblewrap needs a user namespace to build it.
+#
+# This profile attaches only to Rewire's own copy of bwrap,
+# /usr/lib/rewire/bwrap, which the deb's postinst copies from /usr/bin/bwrap.
+# The system /usr/bin/bwrap keeps whatever policy the distro gives it.
+#
+# It adds one permission, `userns`, and confines nothing else, the same shape
+# as Ubuntu's own profiles for flatpak and lxc-usernsexec. The sandbox itself
+# still turns off nested user namespaces (bwrap --disable-userns).
+# The trade-off is written up in packaging/linux/README.md.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile dev.playrewire.rewire /usr/lib/rewire/bwrap flags=(unconfined) {
+  userns,
+
+  # Site-specific additions and overrides. See local/README for details.
+  include if exists <local/dev.playrewire.rewire>
+}

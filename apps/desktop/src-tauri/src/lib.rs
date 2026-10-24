@@ -4,6 +4,7 @@
 //! [`commands`]; the frontend contract lives in `apps/web/src/backend/tauri.ts`.
 
 pub mod commands;
+pub mod smoke;
 pub mod state;
 
 use std::path::PathBuf;
@@ -97,15 +98,25 @@ async fn get_presets() -> Result<Vec<Preset>, String> {
     Ok(commands::get_presets().to_vec())
 }
 
+/// Longest a `--smoke` run may take (a cold build of `fmt` included).
+const SMOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
 /// Starts the app. Data lives in Tauri's `app_data_dir`
 /// (`$XDG_DATA_HOME/dev.playrewire.rewire/` on Linux).
+///
+/// With `--smoke` the app boots as usual, runs [`smoke::check`], prints
+/// `SMOKE OK` (exit 0) or `SMOKE FAILED: <reason>` (exit 1), and quits.
 pub fn run() {
+    let smoke_mode = smoke::requested(std::env::args());
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
             let go_override = std::env::var_os("REWIRE_GO_ROOT").map(PathBuf::from);
             let st = AppState::open(&data_dir, Box::new(KeyringStore), go_override)?;
             app.manage(st);
+            if smoke_mode {
+                start_smoke(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -122,4 +133,34 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("Rewire could not start");
+}
+
+/// Runs the smoke check off the UI thread and exits the process with its
+/// result. A watchdog thread fails the run if it hangs.
+fn start_smoke(handle: AppHandle) {
+    std::thread::spawn(|| {
+        std::thread::sleep(SMOKE_TIMEOUT);
+        finish_smoke(Err(format!("timed out after {} s", SMOKE_TIMEOUT.as_secs())));
+    });
+    tauri::async_runtime::spawn(async move {
+        let st = handle.state::<AppState>();
+        finish_smoke(smoke::check(&st).await);
+    });
+}
+
+fn finish_smoke(res: Result<(), String>) -> ! {
+    use std::io::Write;
+    let code = match res {
+        Ok(()) => {
+            println!("{}", smoke::OK_LINE);
+            0
+        }
+        Err(reason) => {
+            eprintln!("SMOKE FAILED: {reason}");
+            1
+        }
+    };
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    std::process::exit(code)
 }

@@ -114,11 +114,26 @@ See the [roadmap](ROADMAP.md) for the phases, from the first technical spikes to
 
 ## Getting started
 
-There's nothing to install yet. In the meantime you can:
+### Play
 
-- ⭐ **Star and watch** the repo to follow progress.
-- 💬 **Open a discussion** with ideas for missions, districts or lessons.
-- 📝 **Review the design doc** and comment on the [open decisions](docs/superpowers/specs/2026-10-21-playrewire-design.md#12-decisions-still-open-the-owners-call).
+Rewire runs on Linux for now, as a desktop app or in your browser.
+
+- **Desktop:** download the `.deb`, `.rpm` or `.AppImage` from [Releases](https://github.com/iemafzalhassan/playrewire/releases). Check its signature first, then install it. Both steps are in [docs/install.md](docs/install.md).
+- **Web:** host the `rewire-web-<ver>.tar.gz` build on any static web server. See [Self-host the web app](docs/install.md#self-host-the-web-app).
+
+### Develop
+
+You need Rust 1.99 with the `wasm32-unknown-unknown` target, Go 1.27.2, Node 26, pnpm 12, [just](https://github.com/casey/just) and `wasm-bindgen` 0.2.129. The desktop app also needs bubblewrap and the WebKitGTK 4.1 dev packages. On Ubuntu: `sudo apt install bubblewrap libwebkit2gtk-4.1-dev librsvg2-dev`.
+
+```sh
+pnpm install
+just test          # Rust, Go and web tests
+just dev-web       # web app at http://localhost:5173
+just dev-desktop   # desktop app (needs: cargo install tauri-cli --version 2.12.3 --locked)
+just bundle        # deb, rpm, AppImage and the web tarball, in target/release/bundle/
+```
+
+Packaging and the Linux sandbox are covered in [packaging/linux/README.md](packaging/linux/README.md).
 
 ## Contributing
 

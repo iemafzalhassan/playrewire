@@ -1,0 +1,29 @@
+#!/bin/sh
+# Rewire deb prerm (Apache-2.0).
+#
+# On removal, unloads the AppArmor profile and deletes what postinst made:
+# /etc/apparmor.d/dev.playrewire.rewire and /usr/lib/rewire/bwrap.
+# On upgrade it does nothing; the new postinst refreshes both.
+# Safe to run again, and it never fails the removal. Not `set -e` on purpose.
+set -u
+
+HELPER_DIR=/usr/lib/rewire
+PROFILE=/etc/apparmor.d/dev.playrewire.rewire
+
+case "${1:-}" in
+    remove) ;;
+    *) exit 0 ;;
+esac
+
+if [ -f "$PROFILE" ]; then
+    if [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null 2>&1; then
+        # -R: unload. Fails harmlessly if the profile was never loaded.
+        apparmor_parser -R "$PROFILE" >/dev/null 2>&1 || true
+    fi
+    rm -f "$PROFILE"
+fi
+
+rm -f "$HELPER_DIR/bwrap" "$HELPER_DIR/bwrap.new"
+rmdir "$HELPER_DIR" 2>/dev/null || true
+
+exit 0

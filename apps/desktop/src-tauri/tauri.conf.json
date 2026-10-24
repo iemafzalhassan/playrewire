@@ -30,9 +30,12 @@
     "active": true,
     "targets": [
       "deb",
+      "rpm",
       "appimage"
     ],
     "category": "Education",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/iemafzalhassan/playrewire",
     "shortDescription": "A free game that turns beginners into real engineers.",
     "icon": [
       "icons/32x32.png",
@@ -41,6 +44,23 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "bubblewrap"
+        ],
+        "files": {
+          "/usr/share/rewire/apparmor/dev.playrewire.rewire": "../../../packaging/linux/apparmor/dev.playrewire.rewire"
+        },
+        "postInstallScript": "../../../packaging/linux/deb/postinst",
+        "preRemoveScript": "../../../packaging/linux/deb/prerm"
+      },
+      "rpm": {
+        "depends": [
+          "bubblewrap"
+        ]
+      }
+    }
   }
 }
