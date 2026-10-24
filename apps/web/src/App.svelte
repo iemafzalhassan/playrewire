@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { getBackend } from "./backend";
-  import { DEFAULT_SETTINGS, emptyProgress, type Settings } from "./backend/types";
+  import { DEFAULT_SETTINGS, emptyProgress, type Preset, type Settings } from "./backend/types";
   import type { Bundle } from "./content/types";
   import { loadBundle, loadTrouble } from "./content/load";
-  import { dueConcepts, initCore, level, type ProgressState } from "./core";
+  import { initCore, type ProgressState } from "./core";
   import Icon from "./lib/Icon.svelte";
   import Card from "./lib/Card.svelte";
   import InkButton from "./lib/InkButton.svelte";
@@ -13,13 +13,30 @@
   import { onNotice } from "./notice";
   import { chunkDone, findChunk, nextChunk } from "./path";
   import ChunkPlayer from "./player/ChunkPlayer.svelte";
+  import FixIt from "./player/FixIt.svelte";
+  import WarmUp from "./player/WarmUp.svelte";
   import { localDate } from "./player/drill";
   import { createRouter, href, type Route } from "./router.svelte";
   import Home from "./routes/Home.svelte";
   import Map from "./routes/Map.svelte";
   import SettingsPage from "./routes/Settings.svelte";
+  import SkillMap from "./routes/SkillMap.svelte";
   import Soon from "./routes/Soon.svelte";
   import { applySettings } from "./settings";
+  import {
+    advanceDay,
+    buildSkillMap,
+    buildToday,
+    dayParts,
+    drillFor,
+    loadDay,
+    planDay,
+    resumeDay,
+    saveDay,
+    type ChunkRef,
+    type DayPlan,
+    type DayStage,
+  } from "./today";
   import tokens from "../../../design/tokens.json";
 
   const wobble = tokens.ink;
@@ -36,6 +53,7 @@
   let phase = $state<"loading" | "ready" | "failed">("loading");
   let notice = $state<string | null>(null);
   let coreReady = $state(false);
+  let presets = $state<Preset[]>([]);
 
   // The learner's own calendar day (local time, never UTC).
   const today = localDate();
@@ -66,6 +84,12 @@
 
     load();
     toolchain?.check();
+    if (backend.kind === "desktop") {
+      backend
+        .getPresets()
+        .then((p) => (presets = p))
+        .catch((e) => console.error("could not load the mentor presets", e));
+    }
 
     return () => {
       stopNotice();
@@ -92,21 +116,83 @@
   }
 
   const next = $derived(bundle ? nextChunk(bundle.path, progress, bundle) : null);
+  // Today's page (spec 4.6): warm-up, the next new page, then a fix-it.
+  const day = $derived(bundle && coreReady ? buildToday(progress, bundle, today) : null);
 
   const home = $derived.by(() => {
-    if (!bundle) return null;
+    if (!bundle || !day) return null;
     const b = bundle;
     const chunks = b.path.map((r) => findChunk(b, r)).filter((c) => c !== undefined);
     const trail = chunks.map((c) => ({ title: c.title, done: chunkDone(c, progress.completed) }));
     return {
-      streak: progress.streak.current,
-      xp: progress.xp,
-      level: coreReady ? level(progress.xp) : 1,
+      streak: day.streak,
+      xp: day.xp,
+      level: day.level,
       newIdeas: trail.filter((t) => !t.done).length,
-      toFix: coreReady ? dueConcepts(progress, today).length : 0,
+      toFix: day.toFix,
       trail,
       nextTitle: next ? (findChunk(b, next)?.title ?? null) : null,
+      day: dayParts(plan, day, b),
     };
+  });
+
+  // Which part of today the learner is on; kept across reloads for the same day.
+  let plan = $state<DayPlan | null>(loadDay(today));
+  const parts = $derived(bundle && day && plan ? dayParts(plan, day, bundle) : null);
+
+  function setPlan(p: DayPlan) {
+    plan = p;
+    saveDay(p);
+  }
+
+  function goTo(p: DayPlan) {
+    if (p.stage === "warmup") router.go({ name: "warmup" });
+    else if (p.stage === "chunk" && p.chunk) router.go({ name: "learn", ...p.chunk });
+    else if (p.stage === "fixit" && p.fixIt) router.go({ name: "fix", ...p.fixIt });
+    else router.go({ name: "home" });
+  }
+
+  /** Home's button: start the day, or pick it up where it was left. */
+  function startDay() {
+    if (!bundle || !day) return;
+    const p = plan && plan.date === today ? resumeDay(plan, day, progress, bundle) : planDay(day, today);
+    setPlan(p);
+    if (p.stage !== "done") return goTo(p);
+    // The day's page is done: carry on with the path, outside the plan.
+    router.go(next ? { name: "learn", ...next } : { name: "map" });
+  }
+
+  /** The current part is finished: on to the next one. */
+  function partDone() {
+    if (!plan || !day) return router.go({ name: "home" });
+    const p = advanceDay(plan, day);
+    setPlan(p);
+    goTo(p);
+  }
+
+  const onwardWords: Record<DayStage, string> = {
+    warmup: "next: warm-up",
+    chunk: "next: new page",
+    fixit: "next: fix-it",
+    done: "finish the day",
+  };
+  /** The words for the button that leaves the current part. */
+  const onwardLabel = () => (plan && day ? onwardWords[advanceDay(plan, day).stage] : "back to today");
+  const sameRef = (a: ChunkRef | null, c: { pack: string; id: string }) => !!a && a.pack === c.pack && a.chunk === c.id;
+  const inDay = (stage: DayStage) => plan?.date === today && plan.stage === stage;
+
+  const skillMap = $derived(bundle && coreReady ? buildSkillMap(progress, bundle, today) : null);
+  const allChunks = $derived(bundle ? bundle.packs.flatMap((p) => p.chunks) : []);
+  const practise = $derived.by(() => {
+    const r = router.route;
+    if (r.name !== "practise" || !bundle || !coreReady) return [];
+    const d = drillFor(progress, bundle, r.concept, today);
+    return d ? [d] : [];
+  });
+  const fixChunk = $derived.by(() => {
+    const r = router.route;
+    if (r.name !== "fix" || !bundle) return undefined;
+    return findChunk(bundle, r);
   });
 
   const districts = $derived.by(() => {
@@ -122,9 +208,10 @@
     });
   });
 
-  const nav: { route: Route; label: string; icon: "page" | "map" | "sliders" }[] = [
+  const nav: { route: Route; label: string; icon: "page" | "map" | "bars" | "sliders" }[] = [
     { route: { name: "home" }, label: "today", icon: "page" },
     { route: { name: "map" }, label: "map", icon: "map" },
+    { route: { name: "skills" }, label: "skills", icon: "bars" },
     { route: { name: "settings" }, label: "settings", icon: "sliders" },
   ];
   const isCurrent = (r: Route) => router.route.name === r.name;
@@ -194,7 +281,7 @@
   </div>
 {/if}
 
-{#if toolchain?.needed && router.route.name !== "learn"}
+{#if toolchain?.needed && !["learn", "warmup", "practise", "fix"].includes(router.route.name)}
   <!-- First launch on desktop: Go isn't here yet. Inside a lesson the drill
        shows this card itself when Run needs Go; See and Type never wait. -->
   <div class="notice-wrap">
@@ -204,7 +291,13 @@
 
 <main id="main">
   {#if router.route.name === "settings"}
-    <SettingsPage {settings} desktop={backend.kind === "desktop"} onChange={saveSettings} />
+    <SettingsPage
+      {settings}
+      desktop={backend.kind === "desktop"}
+      onChange={saveSettings}
+      {presets}
+      saveKey={(id, key) => backend.setApiKey(id, key)}
+    />
   {:else if phase === "loading"}
     <p class="hush" aria-live="polite">opening the sketchbook…</p>
   {:else if phase === "failed" || !home}
@@ -214,22 +307,72 @@
       <InkButton onclick={load}>try again</InkButton>
     </Card>
   {:else if router.route.name === "home"}
-    <Home
-      {...home}
-      onGo={() => router.go(next ? { name: "learn", ...next } : { name: "map" })}
-    />
+    <Home {...home} onGo={startDay} />
   {:else if router.route.name === "map"}
     <Map
       {districts}
       here={next?.pack ?? null}
       onOpen={(ref) => router.go({ name: "learn", ...ref })}
     />
+  {:else if router.route.name === "skills" && skillMap}
+    <SkillMap map={skillMap} />
+  {:else if router.route.name === "warmup" && day}
+    {#if inDay("warmup")}
+      <WarmUp
+        items={day.warmup}
+        chunks={allChunks}
+        {progress}
+        {backend}
+        day={parts}
+        onProgress={(s) => (progress = s)}
+        doneLabel={onwardLabel()}
+        onDone={partDone}
+      />
+    {:else}
+      <WarmUp
+        items={day.warmup}
+        chunks={allChunks}
+        {progress}
+        {backend}
+        onProgress={(s) => (progress = s)}
+        onDone={() => router.go({ name: "home" })}
+      />
+    {/if}
+  {:else if router.route.name === "practise"}
+    {#key router.route.concept}
+      <WarmUp
+        title="practise"
+        items={practise}
+        chunks={allChunks}
+        {progress}
+        {backend}
+        onProgress={(s) => (progress = s)}
+        doneLabel="back to the skill map"
+        onDone={() => router.go({ name: "skills" })}
+      />
+    {/key}
+  {:else if router.route.name === "fix" && fixChunk?.fixIt}
+    {@const dayFix = inDay("fixit") && sameRef(plan!.fixIt, fixChunk)}
+    {#key fixChunk.id}
+      <FixIt
+        chunk={fixChunk}
+        {progress}
+        {backend}
+        day={dayFix ? parts : null}
+        onProgress={(s) => (progress = s)}
+        doneLabel={dayFix ? onwardLabel() : "back to today"}
+        onDone={dayFix ? partDone : () => router.go({ name: "home" })}
+      />
+    {/key}
   {:else if router.route.name === "learn" && learnChunk}
+    {@const dayChunk = inDay("chunk") && sameRef(plan!.chunk, learnChunk)}
     {#key learnChunk.id}
       <ChunkPlayer
         chunk={learnChunk}
         {progress}
         {backend}
+        day={dayChunk ? parts : null}
+        onward={dayChunk ? { label: onwardLabel(), go: partDone } : null}
         onProgress={(s) => (progress = s)}
         onHome={() => router.go({ name: "home" })}
       />

@@ -9,6 +9,8 @@
   import { loadBundle, loadTrouble } from "../content/load";
   import { applyStep, initCore, type ProgressState, type Reward, type StepRecord } from "../core";
   import Card from "../lib/Card.svelte";
+  import DayTrack from "../lib/DayTrack.svelte";
+  import type { DayPart } from "../today";
   import Icon from "../lib/Icon.svelte";
   import InkButton from "../lib/InkButton.svelte";
   import DrillStep from "./DrillStep.svelte";
@@ -25,15 +27,23 @@
     onProgress,
     onHome,
     warm = true,
+    day = null,
+    onward = null,
   }: {
     chunk: Chunk;
     progress: ProgressState;
-    backend: Pick<Backend, "kind" | "run" | "saveProgress">;
+    backend: Pick<Backend, "kind" | "run" | "saveProgress"> & Partial<Pick<Backend, "mentorAvailable" | "mentorHint">>;
     onProgress: (s: ProgressState) => void;
     onHome: () => void;
     /** Start the browser Go lab early, while the learner reads and types. */
     warm?: boolean;
+    /** Today's plan, shown on top while the day runs. */
+    day?: DayPart[] | null;
+    /** While the day runs: the page-done button goes on to the day's next part. */
+    onward?: { label: string; go: () => void } | null;
   } = $props();
+
+  const mentor = untrack(() => (backend.mentorHint && backend.mentorAvailable ? (backend as Required<typeof backend>) : null));
 
   type Playable = Step;
   const playable = $derived(chunk.steps);
@@ -149,6 +159,7 @@
 <article class="player" aria-labelledby="page-title">
   <header class="head">
     <a class="back" href="#/"><Icon name="back" size={22} /> today</a>
+    {#if day}<DayTrack parts={day} compact />{/if}
     <h1 id="page-title" class="hand-title" tabindex="-1">
       {chunk.title}
       <svg class="scribble" viewBox="0 0 220 16" preserveAspectRatio="none" aria-hidden="true">
@@ -195,6 +206,7 @@
           cityStub={bundle.cityStub}
           {progress}
           hints={chunk.hints}
+          {mentor}
           run={(files) => backend.run(files)}
           nextLabel={nextLabel(at as number)}
           onDone={(r) => finish("use", r, false)}
@@ -207,6 +219,8 @@
       <DrillStep
         drills={chunk.drills}
         hints={chunk.hints}
+        concept={chunk.concept}
+        {mentor}
         run={(files) => backend.run(files)}
         nextLabel={nextLabel(at as number)}
         onDone={(r) => finish("drill", r, false)}
@@ -224,7 +238,11 @@
         </h2>
         <p>{chunk.title}: {playable.map((s) => stepWords[s].label).join(", ")}. All yours now.</p>
         <div class="done-actions">
-          <InkButton primary onclick={onHome}>back to today <Icon name="arrow" size={28} /></InkButton>
+          {#if onward}
+            <InkButton primary onclick={onward.go}>{onward.label} <Icon name="arrow" size={28} /></InkButton>
+          {:else}
+            <InkButton primary onclick={onHome}>back to today <Icon name="arrow" size={28} /></InkButton>
+          {/if}
           <InkButton onclick={() => ((at = 0), (rewards = []))}><Icon name="replay" size={22} /> play it again</InkButton>
         </div>
       </Card>

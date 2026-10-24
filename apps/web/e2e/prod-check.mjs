@@ -8,6 +8,8 @@
 //  4. The Use step in the 3D street (Bevy wasm, WebGL2) under the CSP: both missions
 //     walked with the keyboard, a wrong run (ink circle + caption) then a right one,
 //     the canvas filling its box at DPR 1 and 2, and the no-GPU sketch street.
+//  5. Today's page as a returning learner: the warm-up of due concepts, the next
+//     new page, then break-it/fix-it, each saved to the outbox; the dyslexia font.
 // With --shots it also writes review screenshots to docs/design/.
 //
 // Usage: pnpm e2e [-- --shots]   (needs public/lab, public/content, src/core/pkg)
@@ -44,6 +46,97 @@ async function solveDrill(page, wrong = false, delay = 0) {
   await page.locator(wrong ? ".error-card" : '[data-testid="drill-result"] .pass-card').first().waitFor({ timeout: 60_000 });
 }
 const shots = process.argv.includes("--shots");
+
+// Every drill in the bundle by prompt (prompts are unique), for the day run.
+const everyChunk = bundle.packs.flatMap((p) => p.chunks);
+const anyDrill = new Map(everyChunk.flatMap((c) => c.drills.map((d) => [d.prompt, d])));
+
+/** Writes `code` into the editor and runs it; resolves on a pass. */
+async function runCode(page, code) {
+  await page.getByRole("textbox", { name: /your go code/i }).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.insertText(code);
+  await page.getByRole("button", { name: /^run/i }).click();
+  await page.locator('[data-testid="drill-result"] .pass-card').first().waitFor({ timeout: 60_000 });
+}
+const solveAny = async (page) => {
+  const prompt = (await page.locator(".prompt-text").textContent()).trim();
+  await runCode(page, anyDrill.get(prompt).solution.trimEnd());
+};
+
+// A returning learner: two Go pages done and both due for review.
+const returning = (extra = {}) => ({
+  xp: 180,
+  streak: { current: 2, best: 3, last_day: null, freezes: 0 },
+  concepts: {
+    print: { box_level: 1, due: "2000-01-01", successes: 2, fails: 0 },
+    variables: { box_level: 2, due: "2000-01-02", successes: 2, fails: 0 },
+  },
+  completed: ["what-is-a-computer:see", "hello-print:see", "hello-print:type", "hello-print:drill", "cpu-ram-bus:see", "variables:see", "variables:type", "variables:drill"],
+  mission_encounters: {},
+  ...extra,
+});
+/** Seeds progress once per context (later navigations keep what the learner did). */
+const seedOnce = (seed) => {
+  if (sessionStorage.getItem("rewire.e2e.seeded")) return;
+  sessionStorage.setItem("rewire.e2e.seeded", "1");
+  localStorage.setItem("rewire.progress.v1", JSON.stringify(seed));
+};
+
+/** Stands in for the Tauri bridge so the desktop mentor and Settings can be seen in Chromium. */
+const desktopMock = (cfg) => {
+  const cbs = new Map();
+  let n = 1;
+  let settings = cfg.settings;
+  let progress = cfg.progress;
+  window.__TAURI_INTERNALS__ = {
+    transformCallback(cb) {
+      const id = n++;
+      cbs.set(id, cb);
+      return id;
+    },
+    unregisterCallback(id) {
+      cbs.delete(id);
+    },
+    async invoke(cmd, args) {
+      switch (cmd) {
+        case "get_settings":
+          return settings;
+        case "save_settings":
+          settings = args.settings;
+          return null;
+        case "load_progress":
+          return progress;
+        case "save_progress":
+          progress = args.state;
+          return null;
+        case "toolchain_status":
+          return { status: "ready" };
+        case "get_presets":
+          return cfg.presets;
+        case "set_api_key":
+          return null;
+        case "mentor_hint": {
+          let i = 0;
+          for (const e of cfg.mentor) {
+            if (e === "hold") return new Promise(() => {});
+            await new Promise((r) => setTimeout(r, 150));
+            cbs.get(args.onEvent.id)?.({ index: i++, message: e });
+          }
+          return null;
+        }
+      }
+      throw "io";
+    },
+  };
+};
+const mockPresets = [
+  { id: "ollama", label: "Ollama (on this computer)", base_url: "http://localhost:11434/v1", api: "OpenAiCompatible", needs_key: false, local: true, default_model: "llama3.2:3b" },
+  { id: "openai", label: "OpenAI", base_url: "https://api.openai.com/v1", api: "OpenAiCompatible", needs_key: true, local: false, default_model: "gpt-5-mini" },
+  { id: "anthropic", label: "Anthropic", base_url: "https://api.anthropic.com", api: "AnthropicMessages", needs_key: true, local: false, default_model: "claude-haiku-5-5" },
+  { id: "omniroute", label: "OmniRoute (on this computer)", base_url: "http://localhost:20128/v1", api: "OpenAiCompatible", needs_key: false, local: true, default_model: "auto" },
+  { id: "custom", label: "Custom (any OpenAI-compatible server)", base_url: "", api: "OpenAiCompatible", needs_key: false, local: false, default_model: "" },
+];
 const PORT = 4179;
 const base = `http://127.0.0.1:${PORT}`;
 
@@ -324,6 +417,81 @@ try {
     await c.close();
   }
 
+  // 5. Today's page, played in order as a returning learner (web backend, real Go lab).
+  {
+    const c = await browser.newContext({ viewport: { width: 1200, height: 860 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
+    await c.addInitScript(() => {
+      window.__csp = [];
+      document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
+    await c.addInitScript(seedOnce, returning());
+    const p = await c.newPage();
+    const errs = [];
+    p.on("pageerror", (e) => errs.push(String(e)));
+    await p.goto(`${base}/`);
+    await p.waitForSelector("h1:has-text(\"today's page\")");
+    const plan = await p.getByRole("list", { name: /today's plan/i }).locator("li").evaluateAll((li) => li.map((l) => l.dataset.part));
+    const toFix = (await p.getByTestId("stat-fix").textContent()).replace(/\D/g, "");
+    check(plan.join() === "warmup,chunk,fixit" && toFix === "3", `day: home shows warm-up, new page, fix-it (to fix ${toFix})`);
+    await p.evaluate(() => document.fonts.ready);
+    if (shots) {
+      await p.screenshot({ path: `${fileURLToPath(new URL("../../../docs/design/", import.meta.url))}today-with-warmup.png`, fullPage: true });
+      console.log("shot docs/design/today-with-warmup.png");
+    }
+    await p.locator("button[data-primary]").click();
+
+    // Warm-up: one pass per due concept.
+    await p.waitForSelector("h1:has-text(\"warm-up\")");
+    check(await p.getByText("AI mentor is available in the desktop app.").isVisible(), "day: the web drill offers built-in hints and says where the mentor is");
+    await solveAny(p);
+    await p.getByRole("button", { name: /next warm-up/i }).click();
+    await solveAny(p);
+    await p.getByRole("button", { name: /next: new page/i }).click();
+
+    // The next new page: bits and binary.
+    await p.waitForSelector(".see-step svg.scene[role=img]");
+    const chunkId = decodeURIComponent(new URL(p.url()).hash.split("/").at(-1));
+    const theChunk = everyChunk.find((x) => x.id === chunkId);
+    await p.getByRole("button", { name: /next: type/i }).click();
+    await p.getByRole("textbox", { name: /type the code/i }).waitFor();
+    await typeGhost(p, theChunk.type.ghost);
+    await p.getByRole("button", { name: /next: drill/i }).click();
+    for (let i = 0; i < 3; i++) {
+      await solveAny(p);
+      if (i < 2) await p.getByRole("button", { name: /next drill/i }).click();
+    }
+    await p.getByRole("button", { name: /finish/i }).click();
+    await p.getByText("Page done!").waitFor();
+    await p.getByRole("button", { name: /next: fix-it/i }).click();
+
+    // Break it, fix it: the page just learned has the most recent undone fix-it.
+    await p.waitForSelector("h1:has-text(\"break it, fix it\")");
+    const fixId = decodeURIComponent(new URL(p.url()).hash.split("/").at(-1));
+    const broken = await p.getByRole("textbox", { name: /your go code/i }).textContent();
+    const fixChunk = everyChunk.find((x) => x.id === fixId);
+    check(fixId === chunkId && broken.includes(fixChunk.fixIt.broken.trim().split("\n")[0]), `day: fix-it opens on ${fixId}'s broken code`);
+    await runCode(p, fixChunk.fixIt.solution.trimEnd());
+    await p.getByRole("button", { name: /finish the day/i }).click();
+    await p.getByText("Today's page is done").waitFor();
+
+    const box = await p.evaluate(() => JSON.parse(localStorage.getItem("rewire.outbox.v1") ?? "[]"));
+    const warm = box.filter((r) => ["hello-print", "variables"].includes(r.chunk_id) && r.step === "drill" && r.success);
+    check(warm.length === 2, `day: two warm-up drills saved (${warm.map((r) => r.chunk_id).join(", ")})`);
+    check(box.some((r) => r.chunk_id === chunkId && r.step === "drill" && r.success), "day: the new page's drill is saved");
+    check(box.some((r) => r.chunk_id === `${chunkId}#fix` && r.step === "drill" && r.success && r.concept === theChunk.concept), `day: the fix-it is saved as ${chunkId}#fix`);
+    const after = await p.getByRole("list", { name: /today's plan/i }).locator("li .dot").allTextContents();
+    check(after.every((t) => t === "✓"), `day: all three parts ticked (${after.join(" ")})`);
+
+    // Settings: the dyslexia toggle switches the body font (resolved, in a real browser).
+    await p.click('nav a[href="#/settings"]');
+    await p.getByRole("checkbox", { name: /dyslexia-friendly letters/i }).check();
+    const font = await p.evaluate(() => getComputedStyle(document.body).fontFamily);
+    check(/OpenDyslexic/.test(font), `settings: dyslexia toggle switches the body font (${font})`);
+    const csp = await p.evaluate(() => window.__csp);
+    check(csp.length === 0 && errs.length === 0, `day: no CSP violations or page errors ${JSON.stringify([...csp, ...errs])}`);
+    await c.close();
+  }
+
   const appCsp = await page.evaluate(() => window.__csp);
   check(appCsp.length === 0, `app: no CSP violations${appCsp.length ? ": " + appCsp.join(" | ") : ""}`);
   check(errors.length === 0, `no page errors${errors.length ? ": " + errors.join(" | ") : ""}`);
@@ -394,6 +562,72 @@ try {
       await solveDrill(p, false, 110); // typed at a learner's pace, so the round's speed is real
       await p.waitForTimeout(3200); // let the xp float clear
     });
+    // Today's loop: the skill map, and the desktop mentor and Settings (Tauri bridge mocked).
+    await shot(
+      "skill-map",
+      "#/skills",
+      { width: 1200, height: 860 },
+      returning({
+        concepts: {
+          print: { box_level: 4, due: "2026-11-20", successes: 6, fails: 0 },
+          variables: { box_level: 0, due: "2026-10-25", successes: 3, fails: 3 },
+          binary: { box_level: 2, due: "2026-10-27", successes: 2, fails: 1 },
+        },
+        completed: [...returning().completed, "bits-and-binary:see", "bits-and-binary:type", "bits-and-binary:drill"],
+      }),
+    );
+    const desk = async (name, hash, cfg, act) => {
+      const c = await browser.newContext({ viewport: { width: 1200, height: 860 }, deviceScaleFactor: 1, reducedMotion: "no-preference" });
+      await c.addInitScript(desktopMock, cfg);
+      const p = await c.newPage();
+      await p.goto(`${base}/${hash}`);
+      await p.waitForSelector("#page-title");
+      await p.evaluate(() => document.fonts.ready);
+      await act(p);
+      await p.screenshot({ path: `${out}${name}.png`, fullPage: true });
+      console.log(`shot docs/design/${name}.png`);
+      await c.close();
+    };
+    const mentorOn = { reducedMotion: false, dyslexiaFont: false, textScale: 1, mentor: { preset_id: "ollama", base_url: "http://localhost:11434/v1", model: "llama3.2:3b" } };
+    const atDrill = at("see", "type");
+    const toEditor = async (p) => {
+      await p.getByRole("textbox", { name: /your go code/i }).waitFor();
+      await p.getByRole("textbox", { name: /your go code/i }).click();
+      await p.keyboard.insertText('name = "Mia"\nfmt.Println(name)');
+    };
+    const words = ["Look at the first line. ", "Go needs to hear about a new box ", "before you put something in it. ", "Which sign makes a new box and fills it at the same time?"];
+    await desk("mentor-panel-streaming", "#/learn/go-academy/variables", {
+      settings: mentorOn,
+      progress: atDrill,
+      presets: mockPresets,
+      mentor: [{ type: "RUN_STARTED", threadId: "t", runId: "r" }, { type: "TEXT_MESSAGE_START", messageId: "m", role: "assistant" }, ...words.slice(0, 3).map((delta) => ({ type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta })), "hold"],
+    }, async (p) => {
+      await toEditor(p);
+      await p.getByRole("button", { name: /ask the mentor/i }).click();
+      await p.getByTestId("mentor-note").getByText(/before you put/).waitFor();
+      await p.waitForTimeout(900);
+      check(await p.getByRole("button", { name: /mentor is writing/i }).isDisabled(), "mentor: ask is disabled while the note streams");
+    });
+    await desk("mentor-fallback", "#/learn/go-academy/variables", {
+      settings: mentorOn,
+      progress: atDrill,
+      presets: mockPresets,
+      mentor: [{ type: "RUN_STARTED", threadId: "t", runId: "r" }, { type: "RUN_ERROR", message: "The mentor couldn't connect, so here's a built-in hint." }],
+    }, async (p) => {
+      await toEditor(p);
+      await p.getByRole("button", { name: /ask the mentor/i }).click();
+      await p.getByText("The mentor couldn't connect, so here's a built-in hint.").waitFor();
+      check(await p.getByRole("list", { name: "Hints" }).isVisible(), "mentor: RUN_ERROR falls back to the built-in hint ladder");
+    });
+    await desk("settings-mentor", "#/settings", {
+      settings: { ...mentorOn, mentor: { preset_id: "omniroute", base_url: "http://localhost:20128/v1", model: "auto" } },
+      progress: atDrill,
+      presets: mockPresets,
+      mentor: [],
+    }, async (p) => {
+      await p.getByText(/OmniRoute runs on your computer/).waitFor();
+    });
+
     // A phone: touch, mobile viewport; the hidden input holds focus so the keyboard would be up.
     await play("type-step-phone", at("see"), async (p) => {
       const keys = p.getByRole("textbox", { name: /type the code/i });

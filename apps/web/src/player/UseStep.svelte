@@ -24,6 +24,8 @@
   import type { Labels, WorldView } from "../world/world";
   import CodeEditor from "./CodeEditor.svelte";
   import ErrorCard from "./ErrorCard.svelte";
+  import MentorPanel from "./MentorPanel.svelte";
+  import type { Backend, HintRequest } from "../backend/types";
   import { hasBlank, missionCaption, missionFiles, missionKind, templateFor, type Caption } from "./mission";
 
   type Opener = (host: HTMLElement) => Promise<WorldView | { view: WorldView; release: () => void } | null>;
@@ -38,6 +40,7 @@
     onContinue = () => {},
     nextLabel = "finish",
     openWorld,
+    mentor = null,
   }: {
     mission: Mission;
     cityStub: string;
@@ -51,6 +54,8 @@
     nextLabel?: string;
     /** Mounts the 3D street in the host; null means draw the sketch street. */
     openWorld?: Opener;
+    /** The AI mentor (desktop) or null for built-in hints only. */
+    mentor?: Pick<Backend, "kind" | "mentorAvailable" | "mentorHint"> | null;
   } = $props();
 
   const level = untrack(() => helpLevel(progress, mission.id));
@@ -77,7 +82,10 @@
   let running = $state(false);
   let slow = $state(false);
   let passed = $state(false);
-  let hintsShown = $state(0);
+  /** Built-in hints shown plus mentor replies: both count toward hints_used. */
+  let helpUsed = $state(0);
+  let attempt = 0;
+  let lastError: string | null = null;
   let labels = $state<Labels | null>(null);
   let firstRun: boolean | null = null;
   let editor = $state<{ focus: () => void } | null>(null);
@@ -223,7 +231,8 @@
     world.highlight(null);
     const slowTimer = setTimeout(() => (slow = true), 900);
     const { files, lineOffset } = missionFiles(cityStub, mission.setup, code, lv.wholeFile);
-    const hintsAtRun = hintsShown;
+    const hintsAtRun = helpUsed;
+    attempt++;
     let r: RawRunResult | null = null;
     let thrown: unknown = null;
     try {
@@ -252,6 +261,7 @@
       running = false;
       result = { kind: "error", errors };
       if (!trouble && firstRun === null) firstRun = false;
+      if (!trouble) lastError = errors.map((e) => e.raw.trim() || `${e.title}. ${e.plain}`).join("\n");
       return show();
     }
 
@@ -269,17 +279,27 @@
     if (verdict.kind === "pass") {
       passed = true;
       result = { kind: "pass" };
-      onDone({ firstTry: firstRun, hintsUsed: hintsShown });
+      onDone({ firstTry: firstRun, hintsUsed: helpUsed });
     } else {
       const caption = missionCaption(mission, verdict, parsed.events)!;
       view.highlight(caption.target);
       result = { kind: "wrong", caption };
+      lastError = `It ran, but the street went wrong: ${caption.text}`;
     }
     return show();
   }
 
-  function showHint() {
-    if (hintsShown < hints.length) hintsShown++;
+  // Built-in hints only on the blank-page level (help fades); the mentor is there at every level.
+  const ladder = level === "blank_with_hints" ? untrack(() => hints) : [];
+
+  function hintRequest(): HintRequest {
+    return {
+      concept: mission.concept,
+      exercise_prompt: `${mission.title}. ${levelNote}`,
+      code,
+      last_error: lastError,
+      attempt,
+    };
   }
 
   const tags = $derived.by(() => {
@@ -356,12 +376,6 @@
             {running ? "running…" : "run"}
             <Icon name="play" size={24} />
           </InkButton>
-          {#if level === "blank_with_hints"}
-            <InkButton onclick={showHint} disabled={hintsShown >= hints.length}>
-              <Icon name="bulb" size={24} />
-              {hintsShown >= hints.length ? "no more hints" : `hint (${hints.length - hintsShown} left)`}
-            </InkButton>
-          {/if}
           <button type="button" class="leave" onclick={backToStreet}>back to the street</button>
         {/if}
       </div>
@@ -372,13 +386,7 @@
         <p class="slow" role="status">Starting Go… the first run takes a few seconds.</p>
       {/if}
 
-      {#if hintsShown}
-        <ol class="hints" aria-label="Hints">
-          {#each hints.slice(0, hintsShown) as h, i}
-            <li style:--r="{i % 2 ? 0.8 : -0.8}deg"><span class="hint-n" aria-hidden="true">{i + 1}</span>{h}</li>
-          {/each}
-        </ol>
-      {/if}
+      <MentorPanel {mentor} hints={ladder} request={hintRequest} onHelp={() => helpUsed++} active={!passed} />
 
       <div class="result" data-testid="use-result" aria-live="polite" bind:this={resultEl}>
         {#if result?.kind === "blank"}
@@ -587,29 +595,6 @@
     margin: calc(-1 * var(--space-2)) 0 0;
     font-size: var(--size-text-sm);
     color: var(--ink-soft);
-  }
-  .hints {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--space-2);
-  }
-  .hints li {
-    display: flex;
-    gap: var(--space-3);
-    align-items: baseline;
-    padding: var(--space-2) var(--space-4);
-    background: color-mix(in srgb, var(--highlight) 38%, var(--card));
-    border-left: 3px solid var(--highlight);
-    transform: rotate(var(--r));
-    font-family: var(--font-display);
-    font-size: var(--size-hand-sm);
-    line-height: 1.2;
-  }
-  .hint-n {
-    font-weight: 700;
-    color: var(--accent-deep);
   }
   .result:empty {
     display: none;

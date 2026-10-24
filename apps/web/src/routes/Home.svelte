@@ -1,6 +1,8 @@
 <!-- "today's page": three stat cards, the trail through the path, one action. -->
 <script lang="ts">
   import Card from "../lib/Card.svelte";
+  import DayTrack from "../lib/DayTrack.svelte";
+  import type { DayPart } from "../today";
   import Icon from "../lib/Icon.svelte";
   import InkButton from "../lib/InkButton.svelte";
   import { smoothPath, type Pt } from "../lib/sketch";
@@ -18,6 +20,7 @@
     toFix,
     trail,
     nextTitle,
+    day = [],
     onGo,
   }: {
     streak: number;
@@ -28,6 +31,8 @@
     trail: TrailStop[];
     /** null when the whole path is done. */
     nextTitle: string | null;
+    /** Today's three parts: warm-up, new page, fix-it. */
+    day?: DayPart[];
     onGo: () => void;
   } = $props();
 
@@ -41,6 +46,8 @@
       return [x, y];
     }),
   );
+  const started = $derived(day.some((p) => p.state === "done" || p.state === "now"));
+  const dayDone = $derived(day.some((p) => p.state === "done") && day.every((p) => p.state === "done" || p.state === "none"));
   const walked = $derived(here === -1 ? points : points.slice(0, Math.max(here, 0) + 1));
 </script>
 
@@ -109,10 +116,24 @@
     </figure>
   {/if}
 
+  {#if day.length}
+    <section class="plan" aria-labelledby="plan-title">
+      <h2 id="plan-title" class="plan-title">today: about 15 minutes</h2>
+      <DayTrack parts={day} />
+    </section>
+  {/if}
+
   <div class="go">
-    {#if nextTitle}
-      <p class="next">next up: <strong>{nextTitle}</strong></p>
-      <InkButton primary onclick={onGo}>let's go <Icon name="arrow" size={30} /></InkButton>
+    {#if dayDone}
+      <p class="next"><span aria-hidden="true">✓</span> Today's page is done. See you tomorrow!</p>
+      {#if nextTitle}
+        <InkButton primary onclick={onGo}>one more page <Icon name="arrow" size={30} /></InkButton>
+      {:else}
+        <InkButton primary onclick={onGo}>see the map <Icon name="arrow" size={30} /></InkButton>
+      {/if}
+    {:else if day.length || nextTitle}
+      {#if nextTitle}<p class="next">next up: <strong>{nextTitle}</strong></p>{/if}
+      <InkButton primary onclick={onGo}>{started ? "keep going" : "let's go"} <Icon name="arrow" size={30} /></InkButton>
     {:else}
       <p class="next">You finished every page so far. More are on the way.</p>
       <InkButton primary onclick={onGo}>see the map <Icon name="arrow" size={30} /></InkButton>
@@ -246,6 +267,17 @@
     }
   }
 
+  .plan {
+    display: grid;
+    gap: var(--space-3);
+  }
+  .plan-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--size-hand);
+    font-weight: 700;
+    line-height: 1;
+  }
   .go {
     display: grid;
     justify-items: center;

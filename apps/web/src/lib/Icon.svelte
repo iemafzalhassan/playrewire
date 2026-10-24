@@ -1,6 +1,6 @@
 <!-- Inked line icons, drawn slightly off-true on purpose. Decorative unless a label is given. -->
 <script lang="ts">
-  type Name = "page" | "map" | "sliders" | "flame" | "bulb" | "wrench" | "arrow" | "check" | "circle" | "close" | "play" | "back" | "replay";
+  type Name = "page" | "map" | "sliders" | "flame" | "bulb" | "wrench" | "arrow" | "check" | "circle" | "close" | "play" | "back" | "replay" | "pen" | "bars";
   let { name, label, size = 24 }: { name: Name; label?: string; size?: number } = $props();
 
   const paths: Record<Name, string[]> = {
@@ -17,6 +17,8 @@
     play: ["M7.2 4.8 C11 7.2 14.9 9.6 18.6 12.1 C14.8 14.5 11 16.9 7.3 19.3 C7.1 14.5 7.1 9.6 7.2 4.8 Z"],
     back: ["M21 12.6 C16 11.7 10 12.5 3.8 11.9", "M9 7.4 C7.2 9.3 5.4 10.6 3.6 11.9 C5.6 13.3 7.4 14.7 8.7 16.7"],
     replay: ["M18.8 12.4 C18.6 16.2 15.6 19.2 11.8 19.1 C8 19 5 15.9 5.1 12 C5.2 8.2 8.3 5.1 12.1 5.2 C14.3 5.2 16.1 6.2 17.4 7.8", "M17.9 3.9 C17.8 5.3 17.7 6.7 17.6 8.1 C16.2 8.1 14.8 8.2 13.4 8.2"],
+    pen: ["M15.6 4.4 C16.6 3.4 18.2 3.4 19.3 4.5 C20.4 5.6 20.4 7.2 19.4 8.2 L8.6 19.1 L4.1 20.1 L5 15.6 Z", "M14.2 5.9 L17.9 9.6", "M5 15.6 L8.6 19.1"],
+    bars: ["M3.6 20.3 C9 20.1 14.6 20.4 20.4 20.2", "M5.6 19.8 L5.8 12.6 L8.7 12.5 L8.6 19.9", "M10.6 19.9 L10.7 6.8 L13.6 6.7 L13.5 19.8", "M15.6 19.8 L15.7 9.8 L18.6 9.9 L18.5 19.9"],
   };
 </script>
 

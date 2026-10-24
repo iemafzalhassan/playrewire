@@ -15,6 +15,8 @@
   import CodeEditor from "./CodeEditor.svelte";
   import { checkDrill, clock, cpm, wrapMain } from "./drill";
   import ErrorCard from "./ErrorCard.svelte";
+  import MentorPanel from "./MentorPanel.svelte";
+  import type { Backend, HintRequest } from "../backend/types";
 
   let {
     drills,
@@ -23,6 +25,12 @@
     onDone,
     onContinue = () => {},
     nextLabel = "finish",
+    concept = "",
+    mentor = null,
+    needed = 3,
+    onMiss = () => {},
+    showWant = false,
+    doneWords = "Three in a row. Drill done!",
   }: {
     drills: Drill[];
     hints: string[];
@@ -32,9 +40,20 @@
     /** The learner has looked at the last result and wants to move on. */
     onContinue?: () => void;
     nextLabel?: string;
+    /** What this drill practises; sent to the mentor with the exercise. */
+    concept?: string;
+    /** The AI mentor (desktop) or null for built-in hints only. */
+    mentor?: Pick<Backend, "kind" | "mentorAvailable" | "mentorHint"> | null;
+    /** Passes in a row that finish the step: 3 for a page's drill, 1 for a warm-up or fix-it. */
+    needed?: number;
+    /** A run of the learner's code that failed (a Go error or the wrong output). */
+    onMiss?: () => void;
+    /** Show the output the program should print (the fix-it task). */
+    showWant?: boolean;
+    doneWords?: string;
   } = $props();
 
-  const NEEDED = 3;
+  const NEEDED = untrack(() => Math.max(1, needed));
 
   type Result =
     | { kind: "pass"; stdout: string; ms: number; cpm: number }
@@ -48,7 +67,10 @@
   let idx = $state(0);
   let round = $state(1);
   let passes = $state(0);
-  let hintsShown = $state(0);
+  /** Built-in hints shown plus mentor replies: both count toward hints_used. */
+  let helpUsed = $state(0);
+  let attempt = 0;
+  let lastError: string | null = null;
   let code = $state(untrack(() => drills[0]?.starter ?? ""));
   let result = $state<Result | null>(null);
   let running = $state(false);
@@ -109,7 +131,8 @@
     }, 900);
     const d = drill;
     const source = code;
-    const hintsAtRun = hintsShown;
+    const hintsAtRun = helpUsed;
+    attempt++;
     const { source: file, lineOffset } = wrapMain(source, d.wholeFile);
     let r: RawRunResult | null = null;
     let thrown: { e: unknown } | null = null;
@@ -168,15 +191,17 @@
       return;
     }
     if (firstRun === null) firstRun = ok && hintsAtRun === 0;
+    lastError = describeMiss(result);
     if (ok) {
       passes++;
     } else {
       passes = 0;
       missesHere++;
+      onMiss();
     }
     if (passes >= NEEDED) {
       finished = true;
-      onDone({ hintsUsed: hintsShown, firstTry: firstRun });
+      onDone({ hintsUsed: helpUsed, firstTry: firstRun });
     }
     // Bring the verdict into view on short screens.
     await tick();
@@ -197,25 +222,37 @@
     stoppedAt = null;
   }
 
-  function showHint() {
-    if (hintsShown < hints.length) hintsShown++;
+  /** What went wrong last time, in words the mentor can use (never the learner's name or ids). */
+  function describeMiss(r: Result | null): string | null {
+    if (r?.kind === "error") return r.errors.map((e) => e.raw.trim() || `${e.title}. ${e.plain}`).join("\n");
+    if (r?.kind === "wrong") return `It ran but printed:\n${r.got.join("\n")}\nIt should print:\n${r.want.join("\n")}`;
+    return null;
+  }
+
+  function hintRequest(): HintRequest {
+    const want = showWant ? `\nIt should print:\n${drill.expectStdout.replace(/\n+$/, "")}` : "";
+    return { concept, exercise_prompt: drill.prompt + want, code, last_error: lastError, attempt };
   }
 </script>
 
 <section class="drill-step" aria-label="Drill">
   <header class="bar">
-    <p class="round">drill {round}</p>
-    <p class="passes" data-testid="passes">
+    {#if NEEDED > 1}<p class="round">drill {round}</p>{/if}
+    {#if NEEDED > 1}<p class="passes" data-testid="passes">
       <span class="marks" aria-hidden="true">
         {#each Array(NEEDED) as _, i}<span class="mark" class:got={i < passes}>{i < passes ? "✓" : "○"}</span>{/each}
       </span>
       <span>{passes} of {NEEDED} in a row</span>
-    </p>
+    </p>{/if}
     <p class="timer" role="timer" aria-label="time this round">{clock(elapsed)}</p>
   </header>
 
   <Card tape tilt={-0.6} edge="c" class="prompt">
     <p class="prompt-text">{drill.prompt}</p>
+    {#if showWant}
+      <p class="want-title">It should print:</p>
+      <pre class="want" data-testid="fix-want">{drill.expectStdout.replace(/\n+$/, "")}</pre>
+    {/if}
   </Card>
 
   <Card edge="b" class="editor-card">
@@ -240,10 +277,6 @@
         {running ? "running…" : "run"}
         <Icon name="play" size={24} />
       </InkButton>
-      <InkButton onclick={showHint} disabled={hintsShown >= hints.length}>
-        <Icon name="bulb" size={24} />
-        {hintsShown >= hints.length ? "no more hints" : `hint (${hints.length - hintsShown} left)`}
-      </InkButton>
       {#if missesHere >= 2 && drills.length > 1}
         <button type="button" class="other" onclick={nextDrill} disabled={running}>try a different one</button>
       {/if}
@@ -256,20 +289,14 @@
     <p class="slow" role="status">Starting Go… the first run takes a few seconds.</p>
   {/if}
 
-  {#if hintsShown}
-    <ol class="hints" aria-label="Hints">
-      {#each hints.slice(0, hintsShown) as h, i}
-        <li style:--r="{i % 2 ? 0.8 : -0.8}deg"><span class="hint-n" aria-hidden="true">{i + 1}</span>{h}</li>
-      {/each}
-    </ol>
-  {/if}
+  <MentorPanel {mentor} {hints} request={hintRequest} onHelp={() => helpUsed++} active={!passed && !finished} />
 
   <div class="result" data-testid="drill-result" aria-live="polite" bind:this={resultEl}>
     {#if result?.kind === "pass"}
       <Card edge="a" tilt={0.5} class="pass-card">
         <p class="verdict">
           <span class="glyph ok" aria-hidden="true">✓</span>
-          <span>{finished ? "Three in a row. Drill done!" : "It works!"}</span>
+          <span>{finished ? doneWords : "It works!"}</span>
         </p>
         <div class="screen" aria-label="What your program printed">
           <pre>{result.stdout.replace(/\n+$/, "")}</pre>
@@ -404,29 +431,20 @@
     background: var(--card);
     font-size: 0.85em;
   }
-  .hints {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--space-2);
-  }
-  .hints li {
-    display: flex;
-    gap: var(--space-3);
-    align-items: baseline;
-    padding: var(--space-2) var(--space-4);
-    background: color-mix(in srgb, var(--highlight) 38%, var(--card));
-    border-left: 3px solid var(--highlight);
-    transform: rotate(var(--r));
+  .want-title {
+    margin: var(--space-3) 0 var(--space-1);
     font-family: var(--font-display);
     font-size: var(--size-hand-sm);
-    line-height: 1.2;
-    box-shadow: 2px 3px 0 color-mix(in srgb, var(--ink) 12%, transparent);
+    color: var(--ink-soft);
   }
-  .hint-n {
-    font-weight: 700;
-    color: var(--accent-deep);
+  .want {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-wobble-c);
+    background: var(--ink);
+    color: var(--card);
+    white-space: pre-wrap;
+    font-size: 1rem;
   }
   .result:empty {
     display: none;
