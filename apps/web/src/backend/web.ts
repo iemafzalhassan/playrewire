@@ -21,25 +21,36 @@ export const OUTBOX_KEY = "rewire.outbox.v1";
 export const OUTBOX_MAX = 500;
 export const STORAGE_NOTICE = "Progress won't be saved in this window.";
 
+/** Where a stored progress value the schema rejects is kept, so nothing is lost. */
+export const CORRUPT_PROGRESS_PREFIX = "rewire.progress.corrupt.";
+
+// The same bounds as the Rust types (rewire-core types.rs), so anything that
+// loads here also loads in applyStep. u64 stops at what a JS number holds exactly.
+const u8 = z.number().int().min(0).max(255);
+const u32 = z.number().int().min(0).max(4_294_967_295);
+const u64 = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+/** chrono's NaiveDate as serde writes it: YYYY-MM-DD (with a sign for far years). */
+const date = z.string().regex(/^[+-]?\d{4,6}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/);
+
 const ProgressSchema = z.object({
-  xp: z.number().int().nonnegative(),
+  xp: u64,
   streak: z.object({
-    current: z.number().int().nonnegative(),
-    best: z.number().int().nonnegative(),
-    last_day: z.string().nullable(),
-    freezes: z.number().int().nonnegative(),
+    current: u32,
+    best: u32,
+    last_day: date.nullable(),
+    freezes: u8,
   }),
   concepts: z.record(
     z.string(),
     z.object({
-      box_level: z.number().int(),
-      due: z.string(),
-      successes: z.number().int(),
-      fails: z.number().int(),
+      box_level: z.number().int().min(0).max(5),
+      due: date,
+      successes: u32,
+      fails: u32,
     }),
   ),
   completed: z.array(z.string()),
-  mission_encounters: z.record(z.string(), z.number().int()),
+  mission_encounters: z.record(z.string(), u32),
 });
 
 const SettingsSchema = z.object({
@@ -92,15 +103,23 @@ export function createWebBackend(opts: WebBackendOptions = {}): WebBackend {
     }
   }
 
-  function parse<T>(key: string, schema: z.ZodType<T>, fallback: T): T {
+  /** `onReject` sees a stored value that isn't JSON or doesn't fit the schema. */
+  function parse<T>(key: string, schema: z.ZodType<T>, fallback: T, onReject?: (raw: string) => void): T {
     const raw = read(key);
     if (raw === null) return fallback;
     try {
       const r = schema.safeParse(JSON.parse(raw));
-      return r.success ? r.data : fallback;
+      if (r.success) return r.data;
     } catch {
-      return fallback;
+      // Not JSON: rejected below.
     }
+    onReject?.(raw);
+    return fallback;
+  }
+
+  function backUpProgress(raw: string) {
+    console.warn("stored progress didn't load; keeping a copy and starting fresh");
+    write(`${CORRUPT_PROGRESS_PREFIX}${Date.now()}`, raw);
   }
 
   // Validated loosely: the outbox is only ever written by saveProgress below.
@@ -112,7 +131,7 @@ export function createWebBackend(opts: WebBackendOptions = {}): WebBackend {
     pendingOutbox: readOutbox,
     run: (files) => webRun(files),
     async loadProgress() {
-      return parse<ProgressState>(PROGRESS_KEY, ProgressSchema, emptyProgress());
+      return parse<ProgressState>(PROGRESS_KEY, ProgressSchema, emptyProgress(), backUpProgress);
     },
     async saveProgress(state, rec) {
       write(PROGRESS_KEY, JSON.stringify(state));

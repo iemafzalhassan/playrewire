@@ -2,6 +2,8 @@
 // chunk player, the warm-up and the fix-it task. Only the step outcome is saved,
 // never the code or the keys typed.
 import type { Backend } from "../backend/types";
+import { STORAGE_NOTICE } from "../backend/web";
+import { notifyOnce } from "../notice";
 import { applyStep, initCore, type ProgressState, type Reward, type StepRecord } from "../core";
 import { localDate } from "./drill";
 
@@ -26,7 +28,10 @@ export function stepRecord(
   };
 }
 
-/** Applies and saves one record. On trouble it logs and returns null, so no learner is trapped on a step. */
+/**
+ * Applies and saves one record. On trouble it logs, shows the one-line "won't be
+ * saved" notice, and returns null, so no learner is trapped on a step.
+ */
 export async function recordStep(
   progress: ProgressState,
   rec: StepRecord,
@@ -39,6 +44,7 @@ export async function recordStep(
     return out;
   } catch (e) {
     console.error("could not save the step", e);
+    notifyOnce(STORAGE_NOTICE);
     return null;
   }
 }

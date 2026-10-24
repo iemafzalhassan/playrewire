@@ -30,6 +30,7 @@ function memoryStorage(): Storage {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
   vi.doUnmock("@tauri-apps/api/core");
@@ -151,6 +152,67 @@ describe("web backend", () => {
     const b = createWebBackend();
     expect((await b.loadProgress()).xp).toBe(0);
     expect((await b.getSettings()).textScale).toBe(1);
+  });
+
+  it("progress the Rust rules would reject is backed up, not loaded", async () => {
+    const { applyStep, initCore } = await import("../core");
+    await initCore();
+    const good = {
+      xp: 40,
+      streak: { current: 4_294_967_295, best: 4_294_967_295, last_day: "2026-10-21", freezes: 255 },
+      concepts: { print: { box_level: 5, due: "2026-10-30", successes: 4_294_967_295, fails: 0 } },
+      completed: ["hello-print:see"],
+      mission_encounters: { "green-wave": 4_294_967_295 },
+    };
+    type P = typeof good;
+    const bad: [string, (p: P) => void][] = [
+      ["freezes > u8", (p) => (p.streak.freezes = 256)],
+      ["box_level > 5", (p) => (p.concepts.print.box_level = 6)],
+      ["negative box_level", (p) => (p.concepts.print.box_level = -1)],
+      ["current > u32", (p) => (p.streak.current = 4_294_967_296)],
+      ["successes > u32", (p) => (p.concepts.print.successes = 4_294_967_296)],
+      ["encounters > u32", (p) => (p.mission_encounters["green-wave"] = 4_294_967_296)],
+      ["negative xp", (p) => (p.xp = -1)],
+      ["due not a date", (p) => (p.concepts.print.due = "soon")],
+      ["last_day not a date", (p) => (p.streak.last_day = "yesterday")],
+    ];
+    vi.spyOn(Date, "now").mockReturnValue(1_792_800_000_000);
+    for (const [why, spoil] of bad) {
+      const p = structuredClone(good);
+      spoil(p);
+      // The Rust side really refuses it (box_level 6 parses but is out of range for the schedule).
+      if (why !== "box_level > 5") expect(() => applyStep(p as never, rec), why).toThrow();
+      const storage = memoryStorage();
+      const raw = JSON.stringify(p);
+      storage.setItem(PROGRESS_KEY, raw);
+      vi.stubGlobal("localStorage", storage);
+      const { createWebBackend } = await import("./web");
+      const b = createWebBackend();
+      expect(await b.loadProgress(), why).toEqual({
+        xp: 0,
+        streak: { current: 0, best: 0, last_day: null, freezes: 0 },
+        concepts: {},
+        completed: [],
+        mission_encounters: {},
+      });
+      expect(storage.getItem("rewire.progress.corrupt.1792800000000"), why).toBe(raw);
+    }
+    const storage = memoryStorage();
+    storage.setItem(PROGRESS_KEY, JSON.stringify(good));
+    vi.stubGlobal("localStorage", storage);
+    const { createWebBackend } = await import("./web");
+    expect(await createWebBackend().loadProgress()).toEqual(good);
+    expect(storage.length).toBe(1);
+  });
+
+  it("stored progress that isn't JSON is backed up too", async () => {
+    const storage = memoryStorage();
+    storage.setItem(PROGRESS_KEY, "{not json");
+    vi.stubGlobal("localStorage", storage);
+    vi.spyOn(Date, "now").mockReturnValue(5);
+    const { createWebBackend } = await import("./web");
+    expect((await createWebBackend().loadProgress()).xp).toBe(0);
+    expect(storage.getItem("rewire.progress.corrupt.5")).toBe("{not json");
   });
 
   it("web mentor is off and answers with a RUN_ERROR", async () => {
