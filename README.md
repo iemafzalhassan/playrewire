@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-e2572b?style=flat-square" alt="License: Apache-2.0"></a>
-  <a href="#project-status"><img src="https://img.shields.io/badge/status-design%20phase-2a2620?style=flat-square" alt="Status: design phase"></a>
+  <a href="#project-status"><img src="https://img.shields.io/badge/status-MVP%20in%20progress-2a2620?style=flat-square" alt="Status: MVP in progress"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-2a2620?style=flat-square" alt="PRs welcome"></a>
   <a href="CODE_OF_CONDUCT.md"><img src="https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant-2a2620?style=flat-square" alt="Code of Conduct"></a>
 </p>
@@ -108,7 +108,13 @@ Built on cloud-native open source: Kubernetes, Keycloak, Envoy, NATS, CloudNativ
 
 ## Project status
 
-**🟠 Design phase.** The design document is written and under review. No playable build exists yet.
+**🟠 MVP in progress.** The first playable slice works when you build it from source, on Linux desktop and on the web:
+
+- 10 lesson chunks from Silicon Quarter and Go Academy, each taught See → Type → Drill → Use, with 2 missions on the street (Dock St and the binary bridge).
+- A daily loop with warm-up drills from your own mistakes, a skill map, settings (reduced motion, dyslexia font, text size) and the bring-your-own-model mentor.
+- Real Go code: in a bubblewrap sandbox with the Go toolchain on desktop, in the browser on web.
+
+There is no release yet. The packaging and the signed release workflow are ready, and the first release waits on the owner's go-ahead. Until then, see [Getting started](#getting-started) to build it.
 
 See the [roadmap](ROADMAP.md) for the phases, from the first technical spikes to a first playable build, then online play, squads, certification and every platform.
 
@@ -118,7 +124,7 @@ See the [roadmap](ROADMAP.md) for the phases, from the first technical spikes to
 
 Rewire runs on Linux for now, as a desktop app or in your browser.
 
-- **Desktop:** download the `.deb`, `.rpm` or `.AppImage` from [Releases](https://github.com/iemafzalhassan/playrewire/releases). Check its signature first, then install it. Both steps are in [docs/install.md](docs/install.md).
+- **Desktop:** once the first release is out, download the `.deb`, `.rpm` or `.AppImage` from [Releases](https://github.com/iemafzalhassan/playrewire/releases). Check its signature first, then install it. Both steps are in [docs/install.md](docs/install.md).
 - **Web:** host the `rewire-web-<ver>.tar.gz` build on any static web server. See [Self-host the web app](docs/install.md#self-host-the-web-app).
 
 ### Develop

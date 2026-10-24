@@ -36,7 +36,7 @@ Both commands should end with `OK`. If either one fails, don't install the file.
 sudo apt install ./Rewire_<ver>_amd64.deb
 ```
 
-`apt` also installs `bubblewrap`, the sandbox that runs your code. On Ubuntu 24.04 and later, the package also sets up the AppArmor profile that the sandbox needs (see [Linux sandbox setup](#linux-sandbox-setup)). To remove Rewire: `sudo apt remove rewire`.
+`apt` also installs `bubblewrap` (0.9 or newer), the sandbox that runs your code. On Ubuntu 24.04 and later, the package also sets up the AppArmor profile that the sandbox needs (see [Linux sandbox setup](#linux-sandbox-setup)). To remove Rewire: `sudo apt remove rewire`.
 
 ### rpm (Fedora, openSUSE)
 
@@ -69,7 +69,7 @@ Your code runs only on your computer, inside a sandbox. It has no network and ca
 If Rewire says it couldn't start its safe practice space, bubblewrap can't create its sandbox on your system. Check these in order:
 
 1. **Is bubblewrap installed?** Run `bwrap --version`. You need 0.9 or newer.
-2. **Ubuntu 24.04 and later:** Ubuntu blocks the "user namespaces" bubblewrap needs, unless an AppArmor profile allows them. The deb sets this up for you: it copies bwrap to `/usr/lib/rewire/bwrap` and loads the profile `dev.playrewire.rewire` for that copy. Check that it is loaded:
+2. **Ubuntu 24.04 and later:** Ubuntu blocks the "user namespaces" bubblewrap needs, unless an AppArmor profile allows them. The deb sets this up for you. It copies bwrap to `/usr/lib/rewire/bwrap` (an apt hook keeps the copy up to date) and loads the profile `dev.playrewire.rewire` for that copy. Check that it is loaded:
 
    ```sh
    sudo aa-status | grep dev.playrewire.rewire
@@ -78,7 +78,7 @@ If Rewire says it couldn't start its safe practice space, bubblewrap can't creat
    If it's missing, run `sudo dpkg-reconfigure rewire`. With the AppImage, follow the steps in [packaging/linux/README.md](../packaging/linux/README.md#appimage-on-ubuntu-2404).
 3. **Other distros:** check that unprivileged user namespaces are on. `cat /proc/sys/user/max_user_namespaces` should print a number above 0.
 
-**What the profile changes:** it lets anyone on the machine create a user namespace through `/usr/lib/rewire/bwrap`, which is the same thing Ubuntu's restriction tries to limit. [packaging/linux/README.md](../packaging/linux/README.md#the-trade-off) explains the trade-off in full. Removing Rewire removes the profile and the copy.
+**What the profile changes:** anyone on the machine can create a user namespace through `/usr/lib/rewire/bwrap`, which is what Ubuntu's restriction tries to limit. Whatever bwrap runs inside it gets no capabilities, the same limit upstream AppArmor's own bwrap profile uses. [packaging/linux/README.md](../packaging/linux/README.md#the-trade-off) explains the trade-off in full. Removing Rewire removes the profile, the hook and the copy.
 
 ## Self-host the web app
 

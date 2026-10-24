@@ -1,0 +1,5 @@
+// Rewire: after every dpkg run, refresh Rewire's private copy of bwrap
+// (/usr/lib/rewire/bwrap) if /usr/bin/bwrap changed, so bubblewrap security
+// updates reach it. Installed by the rewire package's postinst and removed by
+// its prerm. See packaging/linux/README.md in the Rewire source.
+DPkg::Post-Invoke { "if [ -x /usr/lib/rewire/refresh-bwrap ]; then /usr/lib/rewire/refresh-bwrap || true; fi"; };

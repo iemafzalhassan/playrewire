@@ -1,24 +1,45 @@
 #!/bin/sh
 # Rewire deb postinst (Apache-2.0).
 #
-# 1. Copies /usr/bin/bwrap to /usr/lib/rewire/bwrap, Rewire's own sandbox
-#    helper. The AppArmor profile below attaches to that path only.
-# 2. Installs the AppArmor profile dev.playrewire.rewire and loads it when
-#    AppArmor is running, so bwrap may create user namespaces on Ubuntu 24.04+.
+# Only on kernels with the AppArmor user namespace restriction (Ubuntu
+# 24.04+, where /proc/sys/kernel/apparmor_restrict_unprivileged_userns exists):
+#   1. /usr/lib/rewire/refresh-bwrap copies /usr/bin/bwrap to
+#      /usr/lib/rewire/bwrap, Rewire's private sandbox helper.
+#   2. The apt hook /etc/apt/apt.conf.d/50rewire re-runs that after every dpkg
+#      run, so the copy follows bubblewrap updates.
+#   3. The AppArmor profile dev.playrewire.rewire is installed, if this
+#      system's apparmor_parser accepts it, and loaded when AppArmor is running.
+# Everywhere else, all three are removed and Rewire uses the system bwrap.
 #
 # Safe to run again, and it never fails the install: if a step doesn't work,
 # it prints a warning and Rewire shows its "Linux sandbox setup" help instead.
 # Not `set -e` on purpose.
 set -u
 
-HELPER_DIR=/usr/lib/rewire
-HELPER="$HELPER_DIR/bwrap"
+SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+REFRESH=/usr/lib/rewire/refresh-bwrap
+HOOK_SRC=/usr/share/rewire/apt/50rewire
+HOOK=/etc/apt/apt.conf.d/50rewire
 PROFILE_SRC=/usr/share/rewire/apparmor/dev.playrewire.rewire
 PROFILE=/etc/apparmor.d/dev.playrewire.rewire
+SECURITYFS=/sys/kernel/security/apparmor
 
 warn() {
     echo "rewire: warning: $*" >&2
     echo "rewire: see https://github.com/iemafzalhassan/playrewire/blob/main/docs/install.md#linux-sandbox-setup" >&2
+}
+
+have_parser() {
+    command -v apparmor_parser >/dev/null 2>&1
+}
+
+remove_profile() {
+    if [ -f "$PROFILE" ]; then
+        if [ -d "$SECURITYFS" ] && have_parser; then
+            apparmor_parser -R "$PROFILE" >/dev/null 2>&1 || true
+        fi
+        rm -f "$PROFILE"
+    fi
 }
 
 case "${1:-configure}" in
@@ -26,32 +47,35 @@ case "${1:-configure}" in
     *) exit 0 ;;
 esac
 
-# Refresh the helper on every configure, so it follows the installed bwrap.
-if [ -x /usr/bin/bwrap ]; then
-    if mkdir -p "$HELPER_DIR" &&
-        cp /usr/bin/bwrap "$HELPER.new" &&
-        chmod 0755 "$HELPER.new" &&
-        mv -f "$HELPER.new" "$HELPER"; then
-        :
-    else
-        rm -f "$HELPER.new"
-        warn "could not copy /usr/bin/bwrap to $HELPER"
-    fi
-else
-    warn "/usr/bin/bwrap is missing; install the bubblewrap package"
+# The copy: made or removed by the same script the apt hook runs.
+if [ -x "$REFRESH" ]; then
+    "$REFRESH" || true
 fi
 
-# Only where AppArmor policy is in use. Elsewhere there's nothing to do.
-if [ -d /etc/apparmor.d ] && [ -f "$PROFILE_SRC" ]; then
-    if ! cp "$PROFILE_SRC" "$PROFILE" || ! chmod 0644 "$PROFILE"; then
+if [ ! -e "$SYSCTL" ]; then
+    rm -f "$HOOK"
+    remove_profile
+    exit 0
+fi
+
+if ! { cp "$HOOK_SRC" "$HOOK" && chmod 0644 "$HOOK"; }; then
+    rm -f "$HOOK"
+    warn "could not install the apt hook $HOOK; run 'sudo dpkg-reconfigure rewire' after bubblewrap updates"
+fi
+
+# -Q -K: parse and compile only, nothing is loaded. Older AppArmor (3.x)
+# can't read this AppArmor 4 profile; leave no broken file behind there.
+if [ -d /etc/apparmor.d ] && have_parser && apparmor_parser -Q -K "$PROFILE_SRC" >/dev/null 2>&1; then
+    if ! { cp "$PROFILE_SRC" "$PROFILE" && chmod 0644 "$PROFILE"; }; then
+        remove_profile
         warn "could not install the AppArmor profile at $PROFILE"
-    elif [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null 2>&1; then
-        # -r: load or replace. Loaded profiles also come back at boot from
-        # /etc/apparmor.d.
-        if ! apparmor_parser -r "$PROFILE"; then
-            warn "could not load the AppArmor profile $PROFILE"
-        fi
+    elif [ -d "$SECURITYFS" ]; then
+        # -r: load or replace. AppArmor also loads it at every boot.
+        apparmor_parser -r "$PROFILE" || warn "could not load the AppArmor profile $PROFILE"
     fi
+else
+    remove_profile
+    warn "this system's AppArmor can't use the profile (AppArmor 4 or newer is needed)"
 fi
 
 exit 0

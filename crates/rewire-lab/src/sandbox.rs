@@ -89,10 +89,12 @@ pub(crate) async fn sandbox_probe_async() -> Result<(), LabError> {
     }
 }
 
-/// Rewire's own copy of bwrap, made by the deb's postinst on distros that
-/// ship AppArmor. The AppArmor profile `dev.playrewire.rewire` lets this one
-/// path create user namespaces on Ubuntu 24.04+, leaving the system's
-/// `/usr/bin/bwrap` untouched (see `packaging/linux/README.md`).
+/// Rewire's own copy of bwrap. The deb makes it only on kernels with the
+/// AppArmor user namespace restriction (Ubuntu 24.04+), and keeps it in step
+/// with `/usr/bin/bwrap` after every dpkg run. The AppArmor profile
+/// `dev.playrewire.rewire` lets this one path create user namespaces, and
+/// strips capabilities from everything it runs. The system's `/usr/bin/bwrap`
+/// is left untouched (see `packaging/linux/README.md`).
 pub const PACKAGED_BWRAP: &str = "/usr/lib/rewire/bwrap";
 
 /// Resolves `bwrap`: the packaged copy if it exists, otherwise the first one

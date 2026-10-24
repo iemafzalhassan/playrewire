@@ -2,18 +2,22 @@
 # Rewire deb prerm (Apache-2.0).
 #
 # On removal, unloads the AppArmor profile and deletes what postinst made:
-# /etc/apparmor.d/dev.playrewire.rewire and /usr/lib/rewire/bwrap.
-# On upgrade it does nothing; the new postinst refreshes both.
+# /etc/apparmor.d/dev.playrewire.rewire, /etc/apt/apt.conf.d/50rewire and
+# /usr/lib/rewire/bwrap. dpkg then removes the packaged files, including
+# /usr/lib/rewire/refresh-bwrap and the /usr/lib/rewire directory.
+# On upgrade it does nothing; the new postinst refreshes everything.
 # Safe to run again, and it never fails the removal. Not `set -e` on purpose.
 set -u
 
-HELPER_DIR=/usr/lib/rewire
 PROFILE=/etc/apparmor.d/dev.playrewire.rewire
 
 case "${1:-}" in
     remove) ;;
     *) exit 0 ;;
 esac
+
+# The hook first, so no dpkg run re-creates the copy.
+rm -f /etc/apt/apt.conf.d/50rewire
 
 if [ -f "$PROFILE" ]; then
     if [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null 2>&1; then
@@ -23,7 +27,6 @@ if [ -f "$PROFILE" ]; then
     rm -f "$PROFILE"
 fi
 
-rm -f "$HELPER_DIR/bwrap" "$HELPER_DIR/bwrap.new"
-rmdir "$HELPER_DIR" 2>/dev/null || true
+rm -f /usr/lib/rewire/bwrap /usr/lib/rewire/bwrap.new
 
 exit 0

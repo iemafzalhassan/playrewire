@@ -1,0 +1,37 @@
+#!/bin/sh
+# Rewire: keep /usr/lib/rewire/bwrap, Rewire's private copy of bwrap, in step
+# with /usr/bin/bwrap (Apache-2.0).
+#
+# Installed as /usr/lib/rewire/refresh-bwrap. Run by the deb's postinst and,
+# through /etc/apt/apt.conf.d/50rewire, after every dpkg run, so a bubblewrap
+# security update reaches the copy straight away.
+#
+# The copy exists only where the kernel has the AppArmor user namespace
+# restriction (Ubuntu 24.04+), because only there does it need its own
+# AppArmor profile. Everywhere else it is removed and Rewire uses the system
+# bwrap.
+#
+# Cheap when nothing changed (one cmp), safe to run again, always exits 0.
+set -u
+
+SYSCTL=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+HELPER=/usr/lib/rewire/bwrap
+
+if [ ! -e "$SYSCTL" ] || [ ! -x /usr/bin/bwrap ]; then
+    rm -f "$HELPER" "$HELPER.new"
+    exit 0
+fi
+
+if cmp -s /usr/bin/bwrap "$HELPER"; then
+    exit 0
+fi
+
+if cp /usr/bin/bwrap "$HELPER.new" &&
+    chmod 0755 "$HELPER.new" &&
+    mv -f "$HELPER.new" "$HELPER"; then
+    :
+else
+    rm -f "$HELPER.new"
+    echo "rewire: warning: could not copy /usr/bin/bwrap to $HELPER" >&2
+fi
+exit 0

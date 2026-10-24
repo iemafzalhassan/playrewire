@@ -1,24 +1,71 @@
-# AppArmor profile for Rewire's sandbox helper (Apache-2.0).
+# AppArmor profile for Rewire's sandbox helper, /usr/lib/rewire/bwrap.
 #
 # Ubuntu 24.04 and later block unprivileged user namespaces unless the program
 # has an AppArmor profile that allows them. Rewire's practice sandbox is
 # bubblewrap, and bubblewrap needs a user namespace to build it.
 #
-# This profile attaches only to Rewire's own copy of bwrap,
-# /usr/lib/rewire/bwrap, which the deb's postinst copies from /usr/bin/bwrap.
-# The system /usr/bin/bwrap keeps whatever policy the distro gives it.
+# Based on the upstream AppArmor 4.0 profile "bwrap-userns-restrict":
+#   https://gitlab.com/apparmor/apparmor/-/blob/apparmor-4.0/profiles/apparmor/profiles/extras/bwrap-userns-restrict
+#   (branch apparmor-4.0 at commit 72229df83059480f4e9fb1488624201bdbd61755,
+#   GPL-2.0, AppArmor project). Changes: the profile names, the attachment
+#   path (Rewire's own copy of bwrap, not /usr/bin/bwrap) and the local
+#   include names.
 #
-# It adds one permission, `userns`, and confines nothing else, the same shape
-# as Ubuntu's own profiles for flatpak and lxc-usernsexec. The sandbox itself
-# still turns off nested user namespaces (bwrap --disable-userns).
-# The trade-off is written up in packaging/linux/README.md.
+# How it limits the hole: bwrap itself may create the user namespace and use
+# capabilities inside it (it needs them to build the mounts). Everything bwrap
+# runs is stacked with dev.playrewire.rewire-unpriv, which denies every
+# capability. So /usr/lib/rewire/bwrap can't hand anyone a user namespace
+# with capabilities: Rewire's payloads (go build, /work/prog) need none.
+#
+# The stacking is needed because bwrap sets no-new-privs, which forbids a plain
+# profile transition. See packaging/linux/README.md for the trade-off.
 
 abi <abi/4.0>,
+
 include <tunables/global>
 
-profile dev.playrewire.rewire /usr/lib/rewire/bwrap flags=(unconfined) {
-  userns,
+profile dev.playrewire.rewire /usr/lib/rewire/bwrap flags=(attach_disconnected,mediate_deleted) {
+  allow capability,
+  # not allow all, to allow for pix stack
+  # 'm' is needed everywhere so children work under stacking.
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+  allow px /** -> dev.playrewire.rewire//&dev.playrewire.rewire-unpriv,
 
-  # Site-specific additions and overrides. See local/README for details.
+  # Read packaging/linux/README.md before adding local rules: anything added
+  # here applies to every user who runs /usr/lib/rewire/bwrap.
   include if exists <local/dev.playrewire.rewire>
+}
+
+# Strips capabilities from everything bwrap runs.
+profile dev.playrewire.rewire-unpriv flags=(attach_disconnected,mediate_deleted) {
+  # not allow all, to allow for pix stack
+  allow file rwlkm /{**,},
+  allow network,
+  allow unix,
+  allow ptrace,
+  allow signal,
+  allow mqueue,
+  allow io_uring,
+  allow userns,
+  allow mount,
+  allow umount,
+  allow pivot_root,
+  allow dbus,
+
+  allow pix /** -> &dev.playrewire.rewire-unpriv,
+
+  audit deny capability,
+
+  include if exists <local/dev.playrewire.rewire-unpriv>
 }

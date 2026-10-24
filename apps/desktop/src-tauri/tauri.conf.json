@@ -48,10 +48,12 @@
     "linux": {
       "deb": {
         "depends": [
-          "bubblewrap"
+          "bubblewrap (>= 0.9)"
         ],
         "files": {
-          "/usr/share/rewire/apparmor/dev.playrewire.rewire": "../../../packaging/linux/apparmor/dev.playrewire.rewire"
+          "/usr/share/rewire/apparmor/dev.playrewire.rewire": "../../../packaging/linux/apparmor/dev.playrewire.rewire",
+          "/usr/share/rewire/apt/50rewire": "../../../packaging/linux/deb/50rewire",
+          "/usr/lib/rewire/refresh-bwrap": "../../../packaging/linux/deb/refresh-bwrap"
         },
         "postInstallScript": "../../../packaging/linux/deb/postinst",
         "preRemoveScript": "../../../packaging/linux/deb/prerm"

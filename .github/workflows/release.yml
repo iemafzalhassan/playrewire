@@ -21,7 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Tag matches the app version
@@ -37,30 +37,31 @@ jobs:
       - name: SBOM (SPDX JSON, from the lockfiles)
         # Before the build, so it lists Cargo.lock, pnpm-lock.yaml and go.sum
         # rather than everything under target/ and node_modules/.
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
           output-file: rewire-${{ steps.version.outputs.version }}.spdx.json
+          syft-version: v1.54.1
           upload-artifact: false
           upload-release-assets: false
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
         with:
           toolchain: "1.99"
           targets: wasm32-unknown-unknown
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.27.2"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           version: 12.6.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "26"
-          cache: pnpm
-      - uses: taiki-e/install-action@v2
+          # No cache: the release builds from a clean slate.
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: just,wasm-bindgen@0.2.129
+          tool: just@1.59.0,wasm-bindgen@0.2.129
       - name: Tauri CLI
         run: cargo install tauri-cli --version 2.12.3 --locked
       - name: System packages
@@ -75,8 +76,20 @@ jobs:
       # here), so the sandbox only starts if the deb's profile works.
       - name: Smoke test the deb
         run: |
-          echo "apparmor_restrict_unprivileged_userns=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
+          # Without both of these the smoke test would prove nothing.
+          restrict=$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)
+          if [ "$restrict" != 1 ]; then
+            echo "::error::apparmor_restrict_unprivileged_userns is '$restrict', expected 1"
+            exit 1
+          fi
           sudo apt-get install -y ./target/release/bundle/deb/*.deb
+          if ! sudo aa-status | grep -qx '[[:space:]]*dev\.playrewire\.rewire'; then
+            echo "::error::the dev.playrewire.rewire AppArmor profile is not loaded"
+            sudo aa-status
+            exit 1
+          fi
+          test -x /usr/lib/rewire/bwrap
+          cmp /usr/bin/bwrap /usr/lib/rewire/bwrap
           REWIRE_GO_ROOT="$(go env GOROOT)" xvfb-run -a rewire --smoke | tee smoke.txt
           grep -qx "SMOKE OK" smoke.txt
       # After the deb, so it finds the profiled /usr/lib/rewire/bwrap. This
@@ -96,7 +109,7 @@ jobs:
             "target/release/bundle/web/rewire-web-$VERSION.tar.gz" \
             "rewire-$VERSION.spdx.json" release/
           ls -l release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release
           path: release/
@@ -110,7 +123,7 @@ jobs:
       # Keyless cosign: the job's OIDC token is the signing identity.
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release
           path: release
@@ -119,7 +132,9 @@ jobs:
         run: |
           sha256sum -- * > ../SHA256SUMS
           cat ../SHA256SUMS
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
       - name: Sign SHA256SUMS (keyless)
         run: cosign sign-blob --yes --bundle SHA256SUMS.cosign.bundle SHA256SUMS
       - name: Verify the signature
@@ -128,7 +143,7 @@ jobs:
             --certificate-identity "https://github.com/$GITHUB_WORKFLOW_REF" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: signature
           path: |
@@ -142,7 +157,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: out
           merge-multiple: true
