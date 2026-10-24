@@ -111,7 +111,7 @@ Built on cloud-native open source: Kubernetes, Keycloak, Envoy, NATS, CloudNativ
 **🟠 MVP in progress.** The first playable slice works when you build it from source, on Linux desktop and on the web:
 
 - 10 lesson chunks from Silicon Quarter and Go Academy, each taught See → Type → Drill → Use, with 2 missions on the street (Dock St and the binary bridge).
-- A daily loop with warm-up drills from your own mistakes, a skill map, settings (reduced motion, dyslexia font, text size) and the bring-your-own-model mentor.
+- A daily loop with warm-up drills from your own mistakes, a skill map, settings (reduced motion, dyslexia font, text size) and the bring-your-own-model mentor (desktop only).
 - Real Go code: in a bubblewrap sandbox with the Go toolchain on desktop, in the browser on web.
 
 There is no release yet. The packaging and the signed release workflow are ready, and the first release waits on the owner's go-ahead. Until then, see [Getting started](#getting-started) to build it.
