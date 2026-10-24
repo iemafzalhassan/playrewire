@@ -66,6 +66,23 @@ describe("MentorPanel", () => {
     expect(onHelp).toHaveBeenCalledTimes(2);
   });
 
+  it("with no built-in hints the fallback doesn't promise one", async () => {
+    const noHints = "The mentor couldn't connect. Look at the faint code and try one small change.";
+    for (const mentor of [
+      desktopMentor((emit) => emit({ type: "RUN_ERROR", message: MENTOR_FALLBACK })),
+      desktopMentor(() => {
+        throw new Error("ipc gone");
+      }),
+    ]) {
+      const { unmount } = render(MentorPanel, { props: { mentor, hints: [], request: () => req } });
+      await fireEvent.click(screen.getByRole("button", { name: /ask the mentor/i }));
+      await waitFor(() => expect(screen.getByText(noHints)).toBeTruthy());
+      expect(screen.queryByText(MENTOR_FALLBACK)).toBeNull();
+      expect(screen.queryByRole("button", { name: /hint/i })).toBeNull();
+      unmount();
+    }
+  });
+
   it("the key error says so and still falls back", async () => {
     const keyMsg = "The mentor couldn't connect. Check your key in Settings.";
     const mentor = desktopMentor((emit) => emit({ type: "RUN_ERROR", message: keyMsg }));

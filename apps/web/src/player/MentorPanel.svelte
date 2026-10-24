@@ -61,10 +61,14 @@
     onHelp();
   }
 
+  /** When there's no built-in hint to fall back to (below the blank-page level). */
+  const NO_HINTS_FALLBACK = "The mentor couldn't connect. Look at the faint code and try one small change.";
+
   function fallBack(message: string) {
     streaming = false;
     pieces = [];
-    trouble = message;
+    // "…so here's a built-in hint" would promise something that isn't there.
+    trouble = message === MENTOR_FALLBACK && hints.length === 0 ? NO_HINTS_FALLBACK : message;
     mode = "builtin";
     // Straight onto the lesson's own ladder, so the learner isn't left empty-handed.
     showHint();
